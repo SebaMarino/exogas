@@ -27,23 +27,21 @@ width=62.  # au, FWHM, Moor+2017 + Gaia dr3
 tf=1.0e7
 alpha=1.0e-4
 fir=5.e-3
-fion=0.9
+fion=0.1
 fCI=1.-fion
-tcoll=-1.
+tcoll=1.0e6
+
+carbon_capture=True
+pcapture=1.
 
 rinobs=30.
 routobs=190.
 
-Mdot_fixed= fco* 1.2e-3 * rbelt**1.5 / width  * fir**2. * Lstar * Mstar**(-0.5) # Mearth/ yr
-print('MdotCO is %1.1e Mearth/Myr'%(Mdot_fixed*1.e6)) # Mearth/Myr
 
 
 #### INITIALIZE SIMULATION
-sim=simulation.simulation(tf=tf, Mstar=Mstar, Lstar=Lstar, rbelt=rbelt, width=width, alpha=alpha, fir=fir, fion=fion, tcoll=tcoll)
+sim=simulation.simulation(tf=tf, Mstar=Mstar, Lstar=Lstar, rbelt=rbelt, width=width, alpha=alpha, fir=fir, fion=fion, tcoll=tcoll, carbon_capture=carbon_capture, pcapture=pcapture)
 
-Mdot_fixed= sim.fco* 1.2e-3 * sim.rbelt**1.5 / sim.width  * sim.fir**2. * sim.Lstar * sim.Mstar**(-0.5) # Mearth/ yr
-print('MdotCO is %1.1e Mearth/Myr'%(Mdot_fixed*1.e6)) # Mearth/Myr
-print(sim.fco, sim.rbelt, sim.width, sim.fir, sim.Lstar, sim.Mstar )
 
 #### RUN SIMULATION
 S_filename='Sigma_gas_evol_%1.1e_%1.1e_phcount_fixed_mdot'%(alpha, fir)
@@ -55,6 +53,7 @@ T2=time.gmtime()
 print('Execution time in sec: ',time.mktime(T2)-time.mktime(T1)) 
 np.save(S_filename, sim.Sigma_g)
 np.save(t_filename, sim.ts)
+
 
 
 ### CALCULATE TOTAL MASS
@@ -71,6 +70,10 @@ MC1s=np.sum(sim.Sigma_g[1,mask_mtot,:].T*sim.grid.hs[mask_mtot]*sim.grid.rs[mask
 
 print('plotting')
 
+# plt.plot(sim.ts_sim, sim.fir)
+# plt.xscale('log')
+# plt.yscale('log')
+# plt.show()
 # factor 2 no longer necessary as now it is done with photon counting
 sigma_C1c=(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
 sigma_COc=(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2

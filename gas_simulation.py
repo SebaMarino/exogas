@@ -66,7 +66,7 @@ class simulation:
         default_dt0=60. # yr (maximum dt)
 
         default_pcapture=1.
-        default_I =0.025 # inclination dispersion
+        # default_I =0.025 # inclination dispersion
         
         ### system
         self.Mstar=Mstar if Mstar is not None else default_Mstar
@@ -146,18 +146,24 @@ class simulation:
                 print('fixed CO input rate based on constant fractional luminosity')
                 MdotCO_fixed= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
                 self.MdotCO=MdotCO_fixed*np.ones(self.Nt)
+                self.fir=self.fir*np.ones(self.Nt)
             else:
                 print('varying CO input rate based on final fractional luminosity and tcoll given by the user')
                 MdotCO_final= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
                 self.MdotCO=MdotCO_final*(1.+self.tf/self.tcoll)**2./(1.+self.ts_sim/self.tcoll)**2.
-                
-        elif MdotCO>0.:
+                self.fir=self.fir*(1.+self.tf/self.tcoll)/(1.+self.ts_sim/self.tcoll)
+
+        elif MdotCO>0.: 
             if self.tcoll<0.:
                 print('fixed CO input rate based on Mdot given by the user')
                 self.MdotCO=np.ones(self.Nt)*MdotCO
+                self.fir=self.fir*np.ones(self.Nt)
+
             else:
                 print('varying CO input rate based on final Mdot and tcoll given by the user')
                 self.MdotCO=MdotCO*(1.+self.tf/self.tcoll)**2./(1.+self.ts_sim/self.tcoll)**2.
+                self.fir=self.fir*(1.+self.tf/self.tcoll)/(1.+self.ts_sim/self.tcoll)
+
         else:
             raise ValueError('input MdotCO must be a float greater than zero')
 
@@ -170,8 +176,8 @@ class simulation:
         self.carbon_capture=carbon_capture
 
         if self.carbon_capture:
-            self.pcapture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
-            self.I=I if I is not None else default_I
+            self.P_c_capture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
+            # self.I=I if I is not None else default_I
                                        
         if verbose:
             print('Rmax = %1.1f au'%(self.grid.rmax))
@@ -196,7 +202,7 @@ class simulation:
 
 
     #### function to advance one step
-    def Sigma_next(self, Sigma_prev, MdotCO):
+    def Sigma_next(self, Sigma_prev, MdotCO, fir):
     
         ###########################################
         ################ viscous evolution
@@ -245,11 +251,13 @@ class simulation:
             Snext[1,:]=Snext[1,:]+self.dt*Sdot_ph*muc1co
             #Snext2[0,Snext2[0,:]<0.0]=0.0
 
+
         ###########################################
         ############## carbon capture
-        ###########################################    
-        # if carbon_capture and fir!=None and cs!=None:
-        #     Snext2[1,:]=Snext2[1,:]-Snext2[1,:]*R_c_capture(rs, r0, width, cs, fir, I, P_capture)
+        ###########################################
+
+        if self.carbon_capture:
+            Snext[1,:]=Snext[1,:]-self.dt*Snext[1,:]*self.R_c_capture(fir)*self.P_c_capture
  
     
         Snext[Snext[:,:]<0.0]=0.0
@@ -345,7 +353,7 @@ class simulation:
             mask_m=np.sum(Sigma_temp, axis=0)>0.0
             self.mus[mask_m]=(Sigma_temp[0,mask_m]+Sigma_temp[1,mask_m]*(1.+16./12.))/(Sigma_temp[0,mask_m]/28.+Sigma_temp[1,mask_m]/6.) # Sigma+Oxigen/(N)
     
-            Sigma_temp=self.Sigma_next(Sigma_temp, self.MdotCO[i])
+            Sigma_temp=self.Sigma_next(Sigma_temp, self.MdotCO[i], self.fir[i])
             
             if i%self.dt_skip==0.0 or i==self.Nt-1:
                 self.Sigma_g[:,:,j]=Sigma_temp*1.
@@ -355,7 +363,11 @@ class simulation:
         # return Sigma_g, ts2
 
 
+    def R_c_capture(self, fir):
 
+        return self.Omegas * self.grid.rs * fir / (self.sig_belt *np.sqrt(np.pi*2.)) * np.exp(-0.5 * (self.grid.rs-self.rbelt)**2./ (self.sig_belt**2.)) # 1/yr
+
+        
             
 class simulation_grid:
 
@@ -376,7 +388,7 @@ class simulation_grid:
         self.hs=self.rhalfs[1:]-self.rhalfs[:-1] # Nr
         self.rs=0.5*(self.rhalfs[1:] + self.rhalfs[:-1])
 
-        
+
 
     
 ### miscelaneous functions
@@ -405,6 +417,15 @@ def M_to_L(Mstar): # stellar mass to stellar L MS
             L=3.2e4*Mstar
 
     return L
+
+
+def power_law_dist(xmin, xmax,alpha, N):
+
+    if alpha==-1.0: sys.exit(0)
+    u=np.random.uniform(0.0, 1.0,N)
+    beta=1.0+alpha
+    return ( (xmax**beta-xmin**beta)*u +xmin**beta  )**(1./beta)
+    
 
 def tau_vis(r, alpha, cs, Mstar):
     # r in au
@@ -455,3 +476,64 @@ def tau_CO_photon_counting(Sigma_CO, Sigma_C1, fion=0.): # interpolate calculati
 
     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
     return tau # yr
+
+
+
+
+############## COLLISIONS
+
+def f_Dbl(Mstar=1.0, Lstar=1.0, rho=2700.0):
+
+    return 0.8*(Lstar/Mstar)*(2700.0/rho)
+
+
+def f_tc_simple(Mtot, r, dr, Dc=10.0, e=0.05, Qd=150.0, Mstar=1.0): # collisional timescale of largest planetesimal
+
+    return 1.4e-3 * r**(13.0/3) * (dr/r) * Dc * Qd**(5./6.) *e**(-5.0/3.0) * Mstar**(-4.0/3.0)*Mtot**(-1.0) # in yr
+
+def f_G(q,Xc):
+
+    return (Xc**(5.-3*q)-1. ) + (6.*q-10.)*(3.*q-4.)**(-1.)*(Xc**(4.-3.*q) -1. ) + (3.*q-5.)*(3.*q-3.)**(-1.)*(Xc**(3.-3.*q)-1. )
+
+def f_Xc(Qd, r, Mstar, e, I):
+
+    return 1.3e-3*(Qd * r / (Mstar*(1.25*e**2. + I**2.)))**(1./3.)
+
+def f_tc_Xc(Mtot, r, dr, rho=2700.0, Dc=10.0, e=0.05, I=0.05, Qd=150.0, Mstar=1.0, q=11./6.): # collisional timescale of largest planetesimal
+    A=(3.8 * rho * r**2.5 * dr * Dc  )/(Mstar**0.5 * Mtot) # yr (error in Eq 9 Wyatt, Smith, Su, Rieke, Greaves et al. 2007, equation is in years)
+    B= ( (12.*q - 20.)*( 1.+1.25*(e/I)**2.0 )**(-0.5) )/((18.-9.*q)*f_G(q, f_Xc(Qd, r, Mstar, e, I)))
+    return A*B # yr
+    
+
+def Mtot_t(Mtot0, t, r, dr,  rho=2700.0, Dc=10.0, e=0.05, I=0.05, Qd=150.0, Mstar=1.0, q=11./6.):
+    # t in years
+    tc0=f_tc_Xc(Mtot0, r, dr, rho, Dc, e, I, Qd, Mstar, q=q)
+    if hasattr(tc0, "__len__"):
+        for i in xrange(len(tc0)):
+            if tc0[i]<0.0:
+                tc0[i]=f_tc_simple(Mtot0[i], r[i], dr[i],  Dc, e, Qd, Mstar[i])
+    else:
+        if tc0<0.0:
+            tc0=f_tc_simple(Mtot0, r, dr,  Dc, e, Qd, Mstar)
+        
+    return Mtot0/(1.0+t/tc0) 
+
+def Mtot_t_simple(Mtot0, t, r, dr,  rho=2700.0, Dc=10.0, e=0.05, I=0.05, Qd=150.0, Mstar=1.0, q=11./6.):
+    # t in years
+    tc0=f_tc_simple(Mtot0, r, dr,  Dc, e, Qd, Mstar)
+
+    return Mtot0/(1.0+t/tc0) 
+
+def Mtotdot_t(Mtot0, t, r, dr, rho=2700.0,  Dc=10.0, e=0.05, I=0.05, Qd=150.0, Mstar=1.0, q=11./6.):
+    # t in years
+    tc0=f_tc_Xc(Mtot0, r, dr, rho,  Dc, e, I, Qd, Mstar, q=q)
+
+    if hasattr(tc0, "__len__"):
+        for i in xrange(len(tc0)):
+            if tc0[i]<0.0:
+                tc0[i]=f_tc_simple(Mtot0[i], r[i], dr[i],  Dc, e, Qd, Mstar[i])
+    else:
+        if tc0<0.0:
+            tc0=f_tc_simple(Mtot0, r, dr,  Dc, e, Qd, Mstar)
+   
+    return Mtot0/(1.0+t/tc0)**2. / tc0 # Mearth/yr
