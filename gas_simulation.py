@@ -3,36 +3,181 @@ from scipy import interpolate
 from constants import *
 import sys
 
-### CO PHOTODISSOCIATION PHOTON COUNTING
-
-try:
-    SCO_grid=np.loadtxt('./Sigma_CO_Mearth_au2.txt')
-    SC1_grid=np.loadtxt('./Sigma_C1_Mearth_au2.txt')
-    tauCO_grid=np.loadtxt('./tau_CO_yr.txt')
-    log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
-    
-    # log10tau_interp=interpolate.interp2d(np.log10(SCO_grid), np.log10(SC1_grid), np.log10(tauCO_grid))
-
-    
-    # N=200
-    # NCOs2=np.logspace(1, 30, N) # cm-2
-    # NCs2=np.logspace(5, 30, N)  # cm-2
-
-    # Sigma_CO2=NCOs2*m_co/Mearth*au_cm**2.
-    # Sigma_C12=NCs2*m_c1/Mearth*au_cm**2.
-    # tau2D2=10**(log10tau_interp(np.log10(Sigma_CO2),np.log10(Sigma_C12)))
-    # print tau2D2
-
-except:
-    print('Interpolaiton of CO photodissociation from photon counting did not work')
 
 
 class simulation:
+    """
+    A class used to simulate the evolution of gas in debris discs considering CO gas release, viscous evolution, diffusion, CO photodissociation and carbon capture by dust. 
+
+    ...
+
+    Attributes
+    ----------
+    Mstar : float
+        Stellar mass in units of solar masses
+    Lstar : float
+        Stellar luminosity in units of solar luminosity
+    rmin : float
+        minimum radius in the simulation grid
+    rmax0 : float
+        minimum maximum radius in the simulation grid in au. The actual maximum radius is calculated based on the viscosity, belt radius and length of the simulation 
+    resolution: float
+        ratio between the width and radius of radial bins (it is constant along the grid)
+    rbelt : float
+        center of the planetesimal belt, in au 
+    width : float
+        FWHM of the belt. The belt has a Gaussian profile.
+    fir: float
+        fractional luminosity of the disc at the end of the simulation.
+    fco: float
+        fraction of CO in planetesimals.
+    alpha: float
+        alpha viscosity parameter.
+    fion: float
+        fraction of carbon atoms that are ionised (uniform across the disc).
+    mu0: float
+        initial mean molecular weight.
+    mus: 1d numpy array
+        mean molecular weights as a function of radius.
+    Sigma_floor: float
+        floor value of the surface density in Mearth/au**2 at the start of the simulation at rc.
+    rc: float
+        cut-off radius of the initial surface density in au.
+    tf: float
+        simulation final time in yr.
+    dt0: float
+        maximum timestep in yr.
+    dt_skip: int
+        final output of the surface densities will skip every dt_skip timesteps (saves storage space).
+    Tb: float
+        temperature at the belt center in K.
+    cs_b: float
+        sounds speed at the belt center in m/s.
+    tvis: float
+        viscous timescale at the belt center in yr. 
+    grid: sub-class
+        class containing the radial grid parameters.
+    Ts: 1d numpy array
+        Temperature array in K
+    cs: 1d numpy array
+        sounds speeds in m/s.
+    Omegas: 1d numpy array
+        Keplerian frequencies in 1/yr.
+    Omegas_s: 1d numpy array
+        Keplerian frequencies in 1/s.
+    nus: 1d numpy array
+        viscosity in units of m**2/s.
+    nus_au2_yr: 1d numpy array
+        viscosity in units of au**2/yr.
+    dt: float
+        timestep used to evolve the system.
+    Nt: int
+        total number of steps.
+    ts_sim: 1d numpy array
+        array of Nt simulated epochs.
+    MdotCO: 1d numpy array
+        array of CO input rates as a function of time in units of Mearth/yr.
+    fir: 1d numpy array
+        array of fractional luminosities as a function of time.
+    ts_sim: 1d numpy array
+        array of Nt simulated epochs.
+    log10tau_interp: function
+        function that returns the CO photodissociation timescale.
+    diffusion: boolean
+        whether or not include radial diffusion.
+    photodissociation: boolean
+        whether or not to include CO photodissociation.
+    carbon_capture: boolean
+        whether or not to include carbon capture.
+    P_c_capture: float
+        probability that a dust grain will capture a carbon grain after a collision
+    Sigma0: 2d numpy array (2, Nr)
+        Initial surface density
+    ts: 1d numpy array
+        array of Nt/dt_skip simulated epochs
+    Sigma_g: Nd numpy array (2, Nr, Nt/dt_skip)
+        array containing the surface density of CO and C as a function of radius and time
 
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None, constant_CO_input=None, tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, I=None, MdotCO=None, tcoll=None ):
+    Methods
+    -------
+    Sigma_next(Sigma_prev, MdotCO, fir)
+        evolves the surface density by one timestep and returns the evolved surface density array (2xNr)
 
-        # input units are Mearth, au, yr, radians
+    Sigma_dot_vis(Sigmas)
+        returns dSigma/dt and the radial velocity of the gas due to viscous evolution.
+
+    Diffusion(Sigmas)
+        returns dSigma/dt due to diffusion
+
+    Sig_dot_p_Gauss(MdotCO)
+        returns dSigma/dt due to CO release from planetesimals
+
+    viscous_evolution()
+        evolves the system and computes Sigma_g from t=0 to t=tf 
+
+    R_c_capture(fir)
+        returns  the rate at which one carbon atom is captured by dust grains
+    """
+
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None ):
+        """
+        Parameters
+        ----------
+        Mstar : float, optional
+             Stellar mass in units of solar masses
+        Lstar : float, optional
+             Stellar luminosity in units of solar luminosity
+        rmin : float, optional
+             minimum radius in the simulation grid
+        rmax0 : float, optional
+             minimum maximum radius in the simulation grid in au. The actual maximum radius is calculated based on the viscosity, belt radius and length of the simulation 
+        resolution: float, optional
+             ratio between the width and radius of the radial bin centered at the belt (the resolution increases with radius).
+        rbelt : float, optional
+             center of the planetesimal belt, in au 
+        width : float, optional
+             FWHM of the belt. The belt has a Gaussian profile.
+        fir: float, optional
+             fractional luminosity of the disc0 (value at the end of the simulation if fir decays with time).
+        fco: float, optional
+             fraction of CO in planetesimals.
+        alpha: float, optional
+             alpha viscosity parameter.
+        fion: float, optional
+             fraction of carbon atoms that are ionised (uniform across the disc).
+        mu0: float, optional
+             initial mean molecular weight.
+        Sigma_floor: float
+             floor value of the surface density in Mearth/au**2 at the start of the simulation at rc.
+        rc: float, optional
+             cut-off radius of the initial surface density in au.
+        tf: float, optional
+             simulation final time in yr.
+        dt0: float, optional
+             maximum timestep in yr.
+        verbose: boolean, optional
+             whether to print or not some values.
+        dt_skip: int, optional
+             final output of the surface densities will skip every dt_skip timesteps (saves storage space).
+        diffusion: boolean, optional
+             whether or not include radial diffusion.
+        photodissociation: boolean, optional
+             whether or not to include CO photodissociation.
+        carbon_capture: boolean, optional
+             whether or not to include carbon capture.
+        pcapture: float, optional
+             probability that a dust grain will capture a carbon grain after a collision
+        MdotCO: float, optional
+             CO input rate in units of Mearth/yr. This is taken as constant if tcoll<0, or the value at t=tf if tcoll>0.
+        tcoll: float, optional
+             collisional timescale at t=0 in yr.
+
+        Raises
+        ------
+        ValueError
+            If the photodissociation timescale tables are not found in the working directory
+        """
         
         ################################
         ### default parameters
@@ -40,14 +185,13 @@ class simulation:
 
         # system
         default_Mstar=2.0 # Msun
-        # default_Lstar=M_to_L(default_Mstar) # Lsun
         default_rmin=1.0  # au
         default_resolution=0.1
         default_rmax0=3.0e3 # au
         
         ## belt parameters
         default_rbelt=100.0 # au 
-        default_width=default_rbelt*0.5  # au, FWHM, Moor+2017 + Gaia dr3
+        default_width=default_rbelt*0.5  # au, FWHM
         default_sig_belt=default_width/(2.0*np.sqrt(2.*np.log(2.)))
         default_fir=1.0e-3 # fractional luminosity
         default_tcoll=-1.
@@ -61,12 +205,10 @@ class simulation:
         default_rc=50. # au
 
         ##  simulation parameters
-        default_constant_CO_input=True
         default_tf=1.0e7 # yr
         default_dt0=60. # yr (maximum dt)
 
         default_pcapture=1.
-        # default_I =0.025 # inclination dispersion
         
         ### system
         self.Mstar=Mstar if Mstar is not None else default_Mstar
@@ -83,7 +225,7 @@ class simulation:
     
         self.resolution=resolution if resolution is not None else default_resolution
 
-        ## belt
+        #### belt
         self.rbelt=rbelt if rbelt is not None else default_rbelt
         self.width=width if width is not None else self.rbelt*0.5
         self.sig_belt=self.width/(2.0*np.sqrt(2.*np.log(2.)))
@@ -94,15 +236,13 @@ class simulation:
             else: self.tcoll=default_tcoll
         except:
             self.tcoll=default_tcoll
-        ## gas parameters
+        #### gas parameters
         self.fco=fco if fco is not None else default_fco
         self.alpha=alpha if alpha is not None else default_alpha
         self.fion=fion if fion is not None else default_fion
         self.mu0=mu0 if mu0 is not None else default_mu0
         self.Sigma_floor=Sigma_floor if Sigma_floor is not None else default_Sigma_floor
         self.rc=rc if rc is not None else default_rc
-
-        # self.constant_CO_input=constant_CO_input if constant_CO_input is not None else default_constant_CO_input
         self.tf=tf if tf is not None else default_tf
         self.dt0=dt0 if dt0 is not None else default_dt0
         self.dt_skip=dt_skip
@@ -111,13 +251,12 @@ class simulation:
         #### calculate basic properties of the simulation
         ################################
 
-        ## temperature and viscosity
+        #### temperature and viscosity at the belt center
         self.Tb=278.3*(self.Lstar**0.25)*self.rbelt**(-0.5) # K # Temperature at belt
         self.cs_b=np.sqrt(kb*self.Tb/(self.mu0*mp)) # m/s sounds speed at belt
         self.tvis=tau_vis(self.rbelt, self.alpha, self.cs_b, self.Mstar)
 
-        ## spatial grid
-        # Rmax_cs=(3.0e4)**4.0*(Mstar*mu0*mp/(2.*kb*278.0*Lstar**0.25))**2.
+        #### spatial grid
         rmax=max(self.rmax0, 3.0 * self.rbelt*(1.0+self.tf/self.tvis))# when Mdot becomes very small, the maximum radius is very important as it sets the evolution timescale.
         Nr=N_optim_radial_grid(self.rmin, rmax, self.rbelt, self.resolution)
         self.grid = simulation_grid(rmin=self.rmin, rmax=rmax, Nr=Nr, p=0.5) 
@@ -126,7 +265,7 @@ class simulation:
                 self.ibelt=ir
                 break
         
-        ## temporal grid
+        #### temporal grid
         self.Ts=278.3*(self.Lstar**0.25)*self.grid.rs**(-0.5) # K
         self.cs=np.sqrt(kb*self.Ts/(self.mu0*mp))
         self.Omegas=2.0*np.pi*np.sqrt(self.Mstar/(self.grid.rs**3.0)) # 1/yr
@@ -140,7 +279,6 @@ class simulation:
 
 
         #### CO input rate
-
         if MdotCO==None: # calculate Mdot CO based on fir
             if self.tcoll<0.:
                 print('fixed CO input rate based on constant fractional luminosity')
@@ -167,17 +305,25 @@ class simulation:
         else:
             raise ValueError('input MdotCO must be a float greater than zero')
 
-        
-                
-        ## switches
 
+        ##########################################
+        ### Grid of CO photodissociation timescales calculated using photon counting (a la Cataldi et al. 2020)
+        ##########################################
+        try:
+            SCO_grid=np.loadtxt('./Sigma_CO_Mearth_au2.txt')
+            SC1_grid=np.loadtxt('./Sigma_C1_Mearth_au2.txt')
+            tauCO_grid=np.loadtxt('./tau_CO_yr.txt')
+            self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
+    
+        except:
+            raise ValueError('Interpolaiton of CO photodissociation from photon counting did not work, probably because you are missing the table files in your working directory.')
+                
+        #### switches
         self.diffusion=diffusion
         self.photodissociation=photodissociation
         self.carbon_capture=carbon_capture
-
         if self.carbon_capture:
             self.P_c_capture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
-            # self.I=I if I is not None else default_I
                                        
         if verbose:
             print('Rmax = %1.1f au'%(self.grid.rmax))
@@ -189,15 +335,13 @@ class simulation:
             print('Mdot CO at t=0 is %1.1e Mearth/yr'%(self.MdotCO[0]))
             print('Mdot CO at t=tf is %1.1e Mearth/yr'%(self.MdotCO[-1]))
 
-        ### produce CO and C surface density grid
-
-        ### initial condition
+        #### initial condition
         self.Sigma0=np.zeros((2, Nr))
         self.Sigma0[:,:]=self.Sigma_floor*(self.grid.rs/self.rc)**(-1.)*np.exp(-(self.grid.rs/self.rc))
 
 
     ##############################################
-    ################ FUNCTIONS ###################
+    ################ METHODS ###################
     ##############################################
 
 
@@ -245,7 +389,7 @@ class simulation:
         ############## photodissociation
         ###########################################
         if self.photodissociation:
-            tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], fion=self.fion)
+            tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
             Sdot_ph=Sigma_prev[0,:]/tphCO
             Snext[0,:]=Snext[0,:]-self.dt*Sdot_ph
             Snext[1,:]=Snext[1,:]+self.dt*Sdot_ph*muc1co
@@ -370,7 +514,29 @@ class simulation:
         
             
 class simulation_grid:
+    """
+    A class used to represent the radial grid of a simulation
 
+
+    Attributes
+    ----------
+    rmin : float
+        minimum radius in au
+    rmax : float
+        maximum radius
+    Nr : int
+        number of radial bins
+    p : float
+        power law index to define radial grid spacing.
+    rhalfs : 1d numpy array
+        array containing the Nr+1 edges of the radial bins
+    hs : 1d numpy array
+        array containing the Nr widths of the radial bins
+    rs : 1d numpy array
+        array containing the Nr centers of the radial bins
+
+    """
+    
     default_rmin=1.0   # au
     default_rmax=3.0e3 # au
     default_Nr=100
@@ -421,7 +587,7 @@ def M_to_L(Mstar): # stellar mass to stellar L MS
 
 def power_law_dist(xmin, xmax,alpha, N):
 
-    if alpha==-1.0: sys.exit(0)
+    if alpha==-1.0: raise ValueError('power law index cannot take a value of -1')
     u=np.random.uniform(0.0, 1.0,N)
     beta=1.0+alpha
     return ( (xmax**beta-xmin**beta)*u +xmin**beta  )**(1./beta)
@@ -461,7 +627,7 @@ def N_optim_radial_grid(rmin, rmax, rb, res):
             Nr=int(Nr*1.2)
     return Nr
 
-def tau_CO_photon_counting(Sigma_CO, Sigma_C1, fion=0.): # interpolate calculations based on photon counting
+def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
 
     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
     # to avoid nans we use a floor value for sigmas of 1e-50
