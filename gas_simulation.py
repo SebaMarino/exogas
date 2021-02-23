@@ -1,9 +1,22 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interpolate
-from constants import *
-import sys
+import sys, os
+from exogas.constants import *
 
+##########################################
+### Grid of CO photodissociation timescales calculated using photon counting (a la Cataldi et al. 2020)
+##########################################
+
+try:
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    SCO_grid=np.loadtxt(dir_path+'/photodissociation/Sigma_CO_Mearth_au2.txt')
+    SC1_grid=np.loadtxt(dir_path+'/photodissociation/Sigma_C1_Mearth_au2.txt')
+    tauCO_grid=np.loadtxt(dir_path+'/photodissociation/tau_CO_yr.txt')
+
+except:
+    raise ValueError('Could not load the photodissociation table files.')
+       
 
 
 class simulation:
@@ -316,17 +329,7 @@ class simulation:
             raise ValueError('input MdotCO must be a float greater than zero')
 
 
-        ##########################################
-        ### Grid of CO photodissociation timescales calculated using photon counting (a la Cataldi et al. 2020)
-        ##########################################
-        try:
-            SCO_grid=np.loadtxt('./Sigma_CO_Mearth_au2.txt')
-            SC1_grid=np.loadtxt('./Sigma_C1_Mearth_au2.txt')
-            tauCO_grid=np.loadtxt('./tau_CO_yr.txt')
-            self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
-    
-        except:
-            raise ValueError('Interpolaiton of CO photodissociation from photon counting did not work, probably because you are missing the table files in your working directory.')
+        self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
                 
         #### switches
         self.diffusion=diffusion
