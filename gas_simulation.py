@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy import interpolate
 from constants import *
 import sys
@@ -89,8 +90,12 @@ class simulation:
         whether or not to include CO photodissociation.
     carbon_capture: boolean
         whether or not to include carbon capture.
-    P_c_capture: float
+    pcapture: float
         probability that a dust grain will capture a carbon grain after a collision
+    co_reformation: boolean, optional
+        whether or not to include CO reformation
+    preform: float, optional
+        probability of CO reforming from captured carbon 
     Sigma0: 2d numpy array (2, Nr)
         Initial surface density
     ts: 1d numpy array
@@ -120,7 +125,7 @@ class simulation:
         returns  the rate at which one carbon atom is captured by dust grains
     """
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None ):
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None):
         """
         Parameters
         ----------
@@ -168,6 +173,10 @@ class simulation:
              whether or not to include carbon capture.
         pcapture: float, optional
              probability that a dust grain will capture a carbon grain after a collision
+        co_reformation: boolean, optional
+             whether or not to include CO reformation
+        preform: float, optional
+             probability of CO reforming from captured carbon    
         MdotCO: float, optional
              CO input rate in units of Mearth/yr. This is taken as constant if tcoll<0, or the value at t=tf if tcoll>0.
         tcoll: float, optional
@@ -209,6 +218,7 @@ class simulation:
         default_dt0=60. # yr (maximum dt)
 
         default_pcapture=1.
+        default_preform=1.
         
         ### system
         self.Mstar=Mstar if Mstar is not None else default_Mstar
@@ -323,14 +333,18 @@ class simulation:
         self.photodissociation=photodissociation
         self.carbon_capture=carbon_capture
         if self.carbon_capture:
-            self.P_c_capture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
-                                       
-        if verbose:
+            self.pcapture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
+        self.co_reformation=co_reformation
+        if self.co_reformation:
+            self.preform=preform if (preform is not None and (preform<=1. and preform>=0.)) else default_preform
+
+        self.verbose=verbose                           
+        if self.verbose:
             print('Rmax = %1.1f au'%(self.grid.rmax))
             print('Nr = %i'%(self.grid.Nr))
-            print('Nt=%i'%self.Nt)
-            print('dt = %1.1f yr'%self.dt)
-            print('dt vis = %1.1f yr'%(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]))
+            print('Nt simulation=%i'%self.Nt)
+            print('simulation timestep = %1.1f yr'%self.dt)
+            print('viscous timescale to cross one radial bin = %1.1f yr'%(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]))
             print('tvis = %1.1e yr'%self.tvis)
             print('Mdot CO at t=0 is %1.1e Mearth/yr'%(self.MdotCO[0]))
             print('Mdot CO at t=tf is %1.1e Mearth/yr'%(self.MdotCO[-1]))
@@ -401,8 +415,11 @@ class simulation:
         ###########################################
 
         if self.carbon_capture:
-            Snext[1,:]=Snext[1,:]-self.dt*Snext[1,:]*self.R_c_capture(fir)*self.P_c_capture
- 
+            Snext[1,:]=Snext[1,:]-self.dt*Snext[1,:]*self.R_c_capture(fir)*self.pcapture
+
+            if self.co_reformation:
+                Snext[0,:]=Snext[0,:]+self.dt*Snext[1,:]*self.R_c_capture(fir)*self.pcapture*self.preform*28./12.
+
     
         Snext[Snext[:,:]<0.0]=0.0
         
@@ -476,17 +493,12 @@ class simulation:
                 self.Nt2=self.Nt
         else:
             raise ValueError('not a valid dt_skip')
-
+        if self.verbose:
+            print('Nt output=%i'%self.Nt2)
     
         self.ts=np.zeros(self.Nt2)
         self.Sigma_g=np.zeros((2,self.grid.Nr,self.Nt2))
     
-        ## Temperature and angular velocity
-        # Ts=278.3*(Lstar**0.25)*rs**(-0.5) # K
-        # Omegas=2.0*np.pi*np.sqrt(Mstar/(rs**3.0)) # 1/yr
-        # Omegas_s=Omegas/year_s # Omega in s-1
-        # ## default viscosity
-        # mus=np.ones(Nr)*mu0
     
     
         self.Sigma_g[:,:,0]=self.Sigma0
@@ -511,7 +523,87 @@ class simulation:
 
         return self.Omegas * self.grid.rs * fir / (self.sig_belt *np.sqrt(np.pi*2.)) * np.exp(-0.5 * (self.grid.rs-self.rbelt)**2./ (self.sig_belt**2.)) # 1/yr
 
-        
+    def plot_panels(self, ts_plot, cmap='viridis', rmax_mtot=None):
+
+        ### critical surface densities
+        sigma_C1c=(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
+        sigma_COc=(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
+
+
+        fig=plt.figure(figsize=(18,6))
+
+        ax1=fig.add_subplot(131)
+        ax2=fig.add_subplot(132)
+        ax3=fig.add_subplot(133)
+
+        if rmax_mtot==None: rmax_mtot=self.grid.rmax 
+        mask_mtot=self.grid.rs<=rmax_mtot
+        MCOs=np.sum(self.Sigma_g[0,mask_mtot,:].T*self.grid.hs[mask_mtot]*self.grid.rs[mask_mtot]*2.0*np.pi, axis=1)
+        MC1s=np.sum(self.Sigma_g[1,mask_mtot,:].T*self.grid.hs[mask_mtot]*self.grid.rs[mask_mtot]*2.0*np.pi, axis=1)
+
+        #### plottingg surface densities
+        for i, ti in enumerate(ts_plot):
+            it=0
+            ### find epoch in time grid
+            for k in range(len(self.ts)):
+                if self.ts[k]>=ti:
+                    it=k
+                    break
+
+            cmap=plt.get_cmap('viridis')
+            x=i*1./(len(ts_plot)-1)
+            colori=cmap(x)
+            
+            ax1.plot(self.grid.rs, self.Sigma_g[0,:,it], color=colori, label='%1.1e'%(ts_plot[i]/1.0e6)+' Myr')
+            ax2.plot(self.grid.rs, self.Sigma_g[1,:,it]*(1.0-self.fion), color=colori, label='%1.1e'%(ts_plot[i]/1.0e6)+' Myr')
+
+        ### draw critical surface densities
+        ax1.axhline(sigma_COc, color='grey', ls='dashed')
+        ax2.axhline(sigma_C1c, color='grey', ls='dashed')
+
+        # maximum and minimum surface densities to plot
+        ymax=max( np.max(self.Sigma_g[0,:,:]), np.max(self.Sigma_g[1,:,:]), sigma_C1c)*2.0
+        ymin=min( self.Sigma_g[0,self.ibelt,it], sigma_COc)/100.0
+
+        for axi in [ax1, ax2]:
+            axi.set_xlim(1.0, 3.0e3)
+            axi.set_ylim(ymin, ymax)
+            axi.set_xscale('log')
+            axi.set_yscale('log')
+            axi.set_xlabel('Radius [au]')
+        ax1.legend(frameon=True, loc=3)
+        ax1.set_ylabel(r'Surface density [$M_{\oplus}$ au$^{-2}$]')
+
+        ## some labels
+        ytext1=ymax * 10** ( -0.13 *(np.log10(ymax)-np.log10(ymin))  )
+        ytext2=ymax * 10** ( -0.07 *(np.log10(ymax)-np.log10(ymin))  )
+        ax1.text(2.0, ytext1, r'$\alpha=10^{%1.0f}$'%np.log10(self.alpha)+'\n $\dot{M}_\mathrm{CO}=%1.2f$'%(self.MdotCO[-1]*1.0e6)+r' $M_{\oplus}$/Myr')
+        ax1.text(1.0e3, ytext2, 'CO',fontsize=15)
+        ax2.text(1.0e3, ytext2, 'CI',fontsize=15)
+
+        #### plotting masses
+
+        ax3.plot(self.ts/1.0e6, MCOs, color='C0', label='CO')
+        ax3.plot(self.ts/1.0e6, MC1s*(1.0-self.fion), color='C1', label='CI')
+
+        MCO_st=self.MdotCO*120.0 # solution in quasy steady state if CO is unshielded. Note that self.dotCO is larger than self.ts because it does not skip any epochs. Its corresponding time array is self.ts_sim
+        MC1_st=self.MdotCO*m_c1/m_co * (2.*self.rbelt / (3.*self.nus_au2_yr[0]*(1./self.grid.rs[0])))*(1.+2.*(rmax_mtot/self.rbelt)**0.5-1.0) # From integrating Metzeger equations
+        ax3.plot(self.ts_sim/1.0e6, MCO_st, color='C0', ls='dashed')
+        ax3.plot(self.ts_sim/1.0e6, MC1_st, color='C1', ls='dashed')
+        ax3.set_ylabel(r'Gas mass [$M_{\oplus}$]')
+        ax3.set_xlabel(r'Time [Myr]')
+        ax3.set_xscale('log')
+        ax3.set_yscale('log')
+        ax3.set_xlim(ts_plot[0]/1.0e6, ts_plot[-1]/1.0e6)
+        ax3.set_ylim(1.0e-8, 1.0e6)
+        ax3.legend(frameon=True, loc=2)
+
+
+        return fig
+
+
+
+    
             
 class simulation_grid:
     """
@@ -703,3 +795,6 @@ def Mtotdot_t(Mtot0, t, r, dr, rho=2700.0,  Dc=10.0, e=0.05, I=0.05, Qd=150.0, M
             tc0=f_tc_simple(Mtot0, r, dr,  Dc, e, Qd, Mstar)
    
     return Mtot0/(1.0+t/tc0)**2. / tc0 # Mearth/yr
+
+
+
