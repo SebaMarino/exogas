@@ -1,4 +1,4 @@
-This repository contains the package gas_simulations.py which allows to compute the evolution of gas in a debris disc. See jupyter notebook example in examples/Example.ipynb to know how to use it.
+Exogas is a package to simulate the viscous evolution of gas in a debris disc, including CO photodissociation, self-shielding and carbons shielding. See jupyter notebook example in examples/Example.ipynb to know how to use it.
 
 Created by Dr. Sebastian Marino
 
