@@ -1,6 +1,6 @@
 # Welcome to exogas by Dr. Sebastian Marino
 
-Exogas is a package to simulate the evolution of gas in a debris disc including:
+Exogas is a python package to simulate the evolution of gas in a debris disc including:
 
 - viscous evolution
 - CO photodissociation
