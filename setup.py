@@ -9,7 +9,7 @@ setup(
   author = 'Sebastian Marino',                   # Type in your name
   author_email = 'sebastian.marino.estay@gmail.com',      # Type in your E-Mail
   url = 'https://github.com/SebaMarino/exogas',   # Provide either the link to your github or to your website
-  download_url = 'https://github.com/SebaMarino/exogas/archive/v0.2.tar.gz',    #
+  download_url = 'https://github.com/SebaMarino/exogas/archive/v0.3.tar.gz',    #
   keywords = ['gas', 'exocomet', 'viscous', 'photodissociation'],   # Keywords that define your package best
   install_requires=[            # I get to this in a second
           'numpy',
@@ -27,4 +27,5 @@ setup(
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
   ],
+    include_package_data=True
 )
