@@ -1,1 +1,3 @@
-include exogas/photodissociation/*
+include exogas/photodissociation/tau_CO_yr.txt
+include exogas/photodissociation/Sigma_C1_Mearth_au2.txt
+include	exogas/photodissociation/Sigma_CO_Mearth_au2.txt
