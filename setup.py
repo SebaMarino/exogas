@@ -3,13 +3,13 @@ from distutils.core import setup
 setup(
   name = 'exogas',         # How you named your package folder (MyLib)
   packages = ['exogas'],   # Chose the same as "name"
-  version = '0.3',      # Start with a small number and increase it with every change you make
+  version = '0.4',      # Start with a small number and increase it with every change you make
   license='MIT',        # Chose a license from here: https://help.github.com/articles/licensing-a-repository
   description = 'Exogas is a package to simulate the evolution of exocometary gas in debris discs.',   # Give a short description about your library
   author = 'Sebastian Marino',                   # Type in your name
   author_email = 'sebastian.marino.estay@gmail.com',      # Type in your E-Mail
   url = 'https://github.com/SebaMarino/exogas',   # Provide either the link to your github or to your website
-  download_url = 'https://github.com/SebaMarino/exogas/archive/v0.3.tar.gz',    #
+  download_url = 'https://github.com/SebaMarino/exogas/archive/v0.4.tar.gz',    #
   keywords = ['gas', 'exocomet', 'viscous', 'photodissociation'],   # Keywords that define your package best
   install_requires=[            # I get to this in a second
           'numpy',
