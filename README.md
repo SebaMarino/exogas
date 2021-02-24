@@ -14,7 +14,7 @@ you can simply use pip, e.g. pip install exogas
 
 ## Usage
 
-See jupyter notebook example in examples/Example.ipynb to know how to use it. Docs coming soon...
+See jupyter notebook example in [examples/Example.ipynb](https://github.com/SebaMarino/exogas/blob/main/docs/examples/Simple_Example.ipynb) to know how to use it. Docs coming soon...
 
 ## Credits
 
