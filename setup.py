@@ -9,11 +9,11 @@ setup(
   author = 'Sebastian Marino',                   # Type in your name
   author_email = 'sebastian.marino.estay@gmail.com',      # Type in your E-Mail
   url = 'https://github.com/SebaMarino/exogas',   # Provide either the link to your github or to your website
-  download_url = 'https://github.com/SebaMarino/exogas/archive/v_0.1.tar.gz',    #
+  download_url = 'https://github.com/SebaMarino/exogas/archive/v0.1.tar.gz',    #
   keywords = ['gas', 'exocomet', 'viscous', 'photodissociation'],   # Keywords that define your package best
   install_requires=[            # I get to this in a second
           'numpy',
-          'matpotlib',
+          'matplotlib',
           'scipy'
       ],
   classifiers=[
