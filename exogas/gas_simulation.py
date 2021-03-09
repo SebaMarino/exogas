@@ -754,7 +754,7 @@ def tau_CO_carbon_layer(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpo
     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
 
-    N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 
+    N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 / 2.  # the column density above CO is half of the total.
     carbon_shielding=np.exp(sigma_c1*N_carbon)
     tau_selfshielding=10**(log10tau_interp(np.log10(1.0e-50),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
     tau=tau_selfshielding*carbon_shielding
