@@ -101,7 +101,8 @@ class simulation:
         array of Nt/dt_skip simulated epochs
     Sigma_g: Nd numpy array (2, Nr, Nt/dt_skip)
         array containing the surface density of CO and C as a function of radius and time
-
+    mixed: boolean, optional
+             whether CO and carbon are vertically mixed or not.
 
     Methods
     -------
@@ -122,9 +123,10 @@ class simulation:
 
     R_c_capture(fir)
         returns  the rate at which one carbon atom is captured by dust grains
+
     """
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None):
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
         """
         Parameters
         ----------
@@ -180,7 +182,8 @@ class simulation:
              CO input rate in units of Mearth/yr. This is taken as constant if tcoll<0, or the value at t=tf if tcoll>0.
         tcoll: float, optional
              collisional timescale at t=0 in yr.
-
+        mixed: boolean, optional
+             whether CO and carbon are vertically mixed or not.
         Raises
         ------
         ValueError
@@ -338,7 +341,8 @@ class simulation:
         self.co_reformation=co_reformation
         if self.co_reformation:
             self.preform=preform if (preform is not None and (preform<=1. and preform>=0.)) else default_preform
-
+        self.mixed=mixed
+        
         self.verbose=verbose                           
         if self.verbose:
             print('Rmax = %1.1f au'%(self.grid.rmax))
@@ -404,7 +408,10 @@ class simulation:
         ############## photodissociation
         ###########################################
         if self.photodissociation:
-            tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
+            if self.mixed:
+                tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
+            else:
+                tphCO=tau_CO_carbon_layer(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
             Sdot_ph=Sigma_prev[0,:]/tphCO
             Snext[0,:]=Snext[0,:]-self.dt*Sdot_ph
             Snext[1,:]=Snext[1,:]+self.dt*Sdot_ph*muc1co
@@ -524,8 +531,10 @@ class simulation:
 
         return self.Omegas * self.grid.rs * fir / (self.sig_belt *np.sqrt(np.pi*2.)) * np.exp(-0.5 * (self.grid.rs-self.rbelt)**2./ (self.sig_belt**2.)) # 1/yr
 
-    def plot_panels(self, ts_plot, cmap='viridis', rmax_mtot=None):
+    def plot_panels(self, ts_plot=None, cmap='viridis', rmax_mtot=None):
 
+        if ts_plot==None:
+            ts_plot=np.logspace(3, int(np.log10(self.tf)), int(np.log10(self.tf))-3+1)
         ### critical surface densities
         sigma_C1c=(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
         sigma_COc=(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
@@ -598,7 +607,7 @@ class simulation:
         ax3.set_xlim(ts_plot[0]/1.0e6, ts_plot[-1]/1.0e6)
         ax3.set_ylim(1.0e-8, 1.0e6)
         ax3.legend(frameon=True, loc=2)
-
+        fig.tight_layout()
 
         return fig
 
@@ -736,7 +745,22 @@ def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # inte
     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
     return tau # yr
 
+def tau_CO_carbon_layer(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
 
+    tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
+    # to avoid nans we use a floor value for sigmas of 1e-50
+    Sigma_COp=Sigma_CO*1. 
+    Sigma_C1p=Sigma_C1*1.*(1.-fion)
+    Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
+    Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
+
+    N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 
+    carbon_shielding=np.exp(sigma_c1*N_carbon)
+    tau_selfshielding=10**(log10tau_interp(np.log10(1.0e-50),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
+    tau=tau_selfshielding*carbon_shielding
+
+    
+    return tau # yr
 
 
 ############## COLLISIONS
