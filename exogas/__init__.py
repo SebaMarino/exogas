@@ -1,2 +1,3 @@
 from exogas.constants import *
-import exogas.gas_simulation as simulation
+import exogas.radial_evolution as radial_simulation
+import exogas.vertical_evolution as vertical_simulation
