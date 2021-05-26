@@ -7,7 +7,7 @@ import exogas.radial_evolution as revol
 
 class simulation:
 
-    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,tf=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, Ntout=None):
+    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,tf=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntout=None, Ntheta=None):
 
 
         # fco=None, fir=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
@@ -40,9 +40,10 @@ class simulation:
         
         ##  simulation parameters
         default_tf=1.0e6 # yr
-        default_dt0=40. # yr (maximum dt)
+        default_dt0=20. # yr (maximum dt)
         default_Ntout=10
-        
+
+        default_Ntheta=1
         # default_pcapture=1.
         # default_preform=1.
         
@@ -101,7 +102,8 @@ class simulation:
         self.zmax=self.zmax_to_H*self.H # au
         self.zs=np.linspace(0., self.zmax, self.Nz)
         self.dz=(self.zs[1]-self.zs[0])
-
+        self.Ntheta=int(Ntheta) if Ntheta is not None and Ntheta>1 else default_Ntheta
+        self.thetas=np.linspace(0., np.pi/2.-1.0e-3, self.Ntheta)
         
         #### temporal grid
         self.dt=min(0.1*self.dz**2./self.nuv_au2_yr, self.dt0) # yr 
@@ -120,6 +122,7 @@ class simulation:
         
         self.diffusion=diffusion
         self.photodissociation=photodissociation
+        self.ionization=ionization
 
         self.verbose=verbose                           
         if self.verbose:
@@ -193,38 +196,87 @@ class simulation:
 
     def Photodissociation_CO(self,rho_temp):
     
-        NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
-        NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
+        #NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
+        #NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
 
-
-        NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
-        NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
-
-        # NCOs_top=np.array([np.trapz(rho_temp[0,i:], self.zs[i:]) for i in range(len(self.zs))])*Mearth/au_cm**2./(28.*mp)
-        # NCIs_top=np.array([np.trapz(rho_temp[1,i:], self.zs[i:]) for i in range(len(self.zs))])*Mearth/au_cm**2./(12.*mp)
+        #NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
+        #NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
     
-        NCOs_bottom=NCO_tot-NCOs_top
-        NCIs_bottom=NCI_tot-NCIs_top
+        #NCOs_bottom=NCO_tot-NCOs_top
+        #NCIs_bottom=NCI_tot-NCIs_top
 
-        return (self.shielding_CO(NCOs_top, NCIs_top)  + self.shielding_CO(NCOs_bottom, NCIs_bottom))*rho_temp[0,:]/260. # Mearth/yr
+        if self.Ntheta>1:
+            # integrate over 4pi assuming density is constant with z
+            R_top    = np.trapz(np.sin(self.thetas)*self.shielding_CO(self.NCOs_top[:,None]/np.cos(self.thetas), self.NCIs_top[:,None]/np.cos(self.thetas)), self.thetas , axis=1)
+            R_bottom = np.trapz(np.sin(self.thetas)*self.shielding_CO(self.NCOs_bottom[:,None]/np.cos(self.thetas), self.NCIs_bottom[:,None]/np.cos(self.thetas)), self.thetas , axis=1)
+            return (R_top+R_bottom)*rho_temp[0,:]/260.
+        else:
 
-    def shielding_CO(self, NCO, NCI):
+            return (self.shielding_CO(self.NCOs_top, self.NCIs_top)  + self.shielding_CO(self.NCOs_bottom, self.NCIs_bottom))*rho_temp[0,:]/260. # Mearth/yr
 
-        ## CO self-shielding
-        kco=np.ones(len(NCO))
         
-        mask1=(NCO>=self.minNCO) & (NCO<=self.maxNCO)
-        kco[ mask1]=10.0**self.logfCO(np.log10(NCO[mask1]))
-        mask2=( NCO<self.minNCO)
-        kco[mask2]=1.0
-        mask3=(NCO>self.maxNCO)
-        kco[mask3]=0.0
+    def shielding_CO(self, NCO, NCI):
 
         # CI shielding
         kcI=np.exp(-NCI*sigma_c1)
+        
+        ## CO self-shielding
+        if self.Ntheta>1:
+            kco=np.ones((self.Nz, self.Ntheta)).flatten()
+            NCOflat=NCO.flatten()
+            mask1=(NCOflat>=self.minNCO) & (NCOflat<=self.maxNCO)
+            kco[ mask1]=10.0**self.logfCO(np.log10(NCOflat[mask1]))
+            mask2=( NCOflat<self.minNCO)
+            kco[mask2]=1.0
+            mask3=(NCOflat>self.maxNCO)
+            kco[mask3]=0.0
+            kco.reshape( (self.Nz, self.Ntheta)  )
 
-        return kco*kcI 
+            return kco.reshape( (self.Nz, self.Ntheta)  )*kcI 
 
+        else:
+            kco=np.ones(self.Nz)
+            mask1=(NCO>=self.minNCO) & (NCO<=self.maxNCO)
+            kco[ mask1]=10.0**self.logfCO(np.log10(NCO[mask1]))
+            mask2=( NCO<self.minNCO)
+            kco[mask2]=1.0
+            mask3=(NCO>self.maxNCO)
+            kco[mask3]=0.0
+
+            return kco*kcI 
+
+    def R_ion(self, rho_temp):
+        t_ion=1.040e2 # yr
+
+        #NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
+        #NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
+        #NCIs_bottom=NCI_tot-NCIs_top
+
+        if self.Ntheta>1.:
+            R_top= np.trapz(np.sin(self.thetas)* np.exp(- self.NCIs_top[:,None]*sigma_c1/np.cos(self.thetas)), self.thetas , axis=1)
+            R_bottom=np.trapz(np.sin(self.thetas)* np.exp(- self.NCIs_bottom[:,None]*sigma_c1/np.cos(self.thetas)), self.thetas , axis=1)
+        else:
+            R_top    = np.exp(-self.NCIs_top*sigma_c1)
+            R_bottom = np.exp(-self.NCIs_bottom*sigma_c1)
+
+            
+        return (R_top+R_bottom)/(2*t_ion)
+
+    def R_recomb(self, rho_temp):
+        # alpha in units of # units of cm3 s-1
+        # alpha*ne. ne=ncII.
+        
+        return f_alpha_R(self.Tb) * (rho_temp[2,:]*Mearth/au_cm**3./(12.*mp))*year_s  # year-1, alpha * ncII
+
+    def update_column_densities(self, rho_temp):
+
+        NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
+        NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
+        self.NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
+        self.NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
+        self.NCOs_bottom=NCO_tot-self.NCOs_top
+        self.NCIs_bottom=NCI_tot-self.NCIs_top
+        
     def vertical_evolution(self):
         ### function to evolve the disc until self.tf
 
@@ -246,9 +298,16 @@ class simulation:
         self.rhos[:,:,0]=self.rhos0
             
         rho_temp=self.rhos[:,:,0]*1.0
+        self.update_column_densities(rho_temp)
+
         j=1
         for i in range(1,self.Nt):
+
+
+            ### update column densities
+            self.update_column_densities(rho_temp)
             
+            # time step
             rho_temp=self.Rho_next(rho_temp)
             
             if i%self.dt_skip==0.0 or i==self.Nt-1:
@@ -283,7 +342,26 @@ class simulation:
             rho_next[0,:]=rho_next[0,:]-self.dt*R_photodissociation
             rho_next[1,:]=rho_next[1,:]+12./28.*self.dt*R_photodissociation
 
+        ###########################################
+        ############## photodissociation
+        ###########################################
+        if self.ionization:
+            r_ionization=rho_temp[1,:]*self.R_ion(rho_temp)
+            r_recomb=rho_temp[2,:]*self.R_recomb(rho_temp)
+            rho_next[1,:]=rho_next[1,:]+self.dt*(r_recomb-r_ionization)
+            rho_next[2,:]=rho_next[2,:]-self.dt*(r_recomb-r_ionization)
+
         return rho_next
         
     
 
+def f_alpha_R(T):
+    # CII, ionized carbon, z=6 and N=5 (remaining electrons)
+    A=2.5e-9
+    B=0.7849
+    C=0.1597
+    T0=6.67e-3
+    T1=1.943e6
+    T2=4.955e4
+    Bp=B+C*np.exp( -T2/T)
+    return A*( np.sqrt(T/T0) * (1.+(T/T0)**(0.5*(1.-Bp))) * (1.+(T/T1)**(0.5*(1.+Bp))) )**(-1.) # units of cm3 s-1
