@@ -75,8 +75,8 @@ class simulation:
         total number of steps.
     ts_sim: 1d numpy array
         array of Nt simulated epochs.
-    MdotCO: 1d numpy array
-        array of CO input rates as a function of time in units of Mearth/yr.
+    MdotCO: float
+        CO input rate in units of Mearth/yr.
     fir: 1d numpy array
         array of fractional luminosities as a function of time.
     ts_sim: 1d numpy array

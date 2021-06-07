@@ -7,7 +7,7 @@ import exogas.radial_evolution as revol
 
 class simulation:
 
-    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,tf=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntout=None, Ntheta=None):
+    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,tf=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntout=None, Ntheta=None, fir=None, fco=None, tcoll=None):
 
 
         # fco=None, fir=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
@@ -27,6 +27,8 @@ class simulation:
         default_width=default_rbelt*0.5  # au, FWHM
         default_sig_belt=default_width/(2.0*np.sqrt(2.*np.log(2.)))
         default_MdotCO=1.0e-7 # Mearth/yr
+        default_fir=1.0e-3 # fractional luminosity
+        default_tcoll=-1.
         
         #default_fir=1.0e-3 # fractional luminosity
         #default_tcoll=-1.
@@ -58,15 +60,16 @@ class simulation:
         self.rbelt=rbelt if rbelt is not None else default_rbelt
         self.width=width if width is not None else self.rbelt*0.5
         self.sig_belt=self.width/(2.0*np.sqrt(2.*np.log(2.)))
-        self.MdotCO=MdotCO if MdotCO is not None and MdotCO>0.0 else default_MdotCO
-        # self.fir=fir if fir is not None else default_fir
-        # try: 
-        #     if tcoll>0.:
-        #         self.tcoll=tcoll
-        #     else: self.tcoll=default_tcoll
-        # except:
-        #     self.tcoll=default_tcoll
+        self.fir=fir if fir is not None else default_fir
+        try: 
+            if tcoll>0.:
+                self.tcoll=tcoll
+            else: self.tcoll=default_tcoll
+        except:
+            self.tcoll=default_tcoll
 
+
+            
         #### gas parameters
         # self.fco=fco if fco is not None else default_fco
         self.alphar=alphar if alphar is not None else default_alphar
@@ -150,7 +153,31 @@ class simulation:
         self.rhos0[1,:]=self.rhotot*0.01
         self.rhos0[0,:]=self.rhotot-self.rhos0[1,:]*28./12
         
-      
+         #### CO input rate
+        if MdotCO==None: # calculate Mdot CO based on fir
+            if self.tcoll<0.:
+                print('fixed CO input rate based on constant fractional luminosity')
+                MdotCO_fixed= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
+                self.MdotCO=MdotCO_fixed*np.ones(self.Nt)
+                self.fir=self.fir*np.ones(self.Nt) # needed if carbon capture is implemented and we need to keep track of fir vs t
+            else:
+                print('varying CO input rate based on final fractional luminosity and tcoll given by the user')
+                MdotCO_final= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
+                self.MdotCO=MdotCO_final*(1.+self.tf/self.tcoll)**2./(1.+self.ts_sim/self.tcoll)**2.
+                self.fir=self.fir*(1.+self.tf/self.tcoll)/(1.+self.ts_sim/self.tcoll)
+
+        elif MdotCO>0.: 
+            if self.tcoll<0.:
+                print('fixed CO input rate based on Mdot given by the user')
+                self.MdotCO=np.ones(self.Nt)*MdotCO
+                self.fir=self.fir*np.ones(self.Nt)  # needed if carbon capture is implemented and we need to keep track of fir vs t
+
+            else:
+                print('varying CO input rate based on final Mdot and tcoll given by the user')
+                self.MdotCO=MdotCO*(1.+self.tf/self.tcoll)**2./(1.+self.ts_sim/self.tcoll)**2.
+                self.fir=self.fir*(1.+self.tf/self.tcoll)/(1.+self.ts_sim/self.tcoll)
+        else:
+            raise ValueError('input MdotCO must be a float greater than zero')
 
     ##############################################
     ################ METHODS ###################
@@ -188,10 +215,10 @@ class simulation:
         tau= 2./3. * self.rbelt / self.nur_au2_yr * np.sqrt(2.*np.pi)*self.sig_belt # yr
         return rho_temp/tau
 
-    def Gas_input(self):
+    def Gas_input(self, MdotCO):
         
         # Mdot in earth masses / yr
-        return self.MdotCO/(2.*np.pi*self.rbelt*self.sig_belt*np.sqrt(2.*np.pi)) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)
+        return MdotCO/(2.*np.pi*self.rbelt*self.sig_belt*np.sqrt(2.*np.pi)) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)
 
 
     def Photodissociation_CO(self,rho_temp):
@@ -308,7 +335,7 @@ class simulation:
             self.update_column_densities(rho_temp)
             
             # time step
-            rho_temp=self.Rho_next(rho_temp)
+            rho_temp=self.Rho_next(rho_temp, self.MdotCO[i])
             
             if i%self.dt_skip==0.0 or i==self.Nt-1:
                 self.rhos[:,:,j]=rho_temp*1.
@@ -319,7 +346,7 @@ class simulation:
 
 
 
-    def Rho_next(self, rho_temp):
+    def Rho_next(self, rho_temp, MdotCO):
 
         ###########################################
         ################ viscous evolution
@@ -328,7 +355,7 @@ class simulation:
         ###########################################
         ############### CO mas input rate
         ###########################################
-        rho_next[0,:]=rho_next[0,:] + self.dt*self.Gas_input()
+        rho_next[0,:]=rho_next[0,:] + self.dt*self.Gas_input(MdotCO)
         ###########################################
         ################ diffusion evolution 
         ###########################################
