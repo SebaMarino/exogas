@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy import interpolate
 import sys,os
 from exogas.constants import *
-import exogas.radial_evolution as revol
+import exogas.radial_simulation as rsim
 
 class simulation:
 
@@ -52,7 +52,7 @@ class simulation:
         
         ### system
         self.Mstar=Mstar if Mstar is not None else default_Mstar
-        self.Lstar=Lstar if Lstar is not None else revol.M_to_L(self.Mstar)
+        self.Lstar=Lstar if Lstar is not None else rsim.M_to_L(self.Mstar)
         self.Nz=Nz if Nz is not None and Nz>0 else default_Nz
         self.zmax_to_H=zmax_to_H if zmax_to_H is not None and zmax_to_H>0 else default_zmax_to_H
         
