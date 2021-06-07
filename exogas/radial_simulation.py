@@ -536,8 +536,9 @@ class simulation:
 
     def plot_panels(self, ts_plot=None, cmap='viridis', rmax_mtot=None):
 
-        if ts_plot==None:
+        if ts_plot is None:
             ts_plot=np.logspace(3, int(np.log10(self.tf)), int(np.log10(self.tf))-3+1)
+
         ### critical surface densities
         sigma_C1c=(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
         sigma_COc=(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
