@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interpolate
-import os
+import sys,os
 from exogas.constants import *
 import exogas.radial_evolution as revol
 
 class simulation:
 
-    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,tf=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntout=None, Ntheta=None, fir=None, fco=None, tcoll=None):
+    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
 
 
         # fco=None, fir=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
@@ -43,7 +43,8 @@ class simulation:
         ##  simulation parameters
         default_tf=1.0e6 # yr
         default_dt0=20. # yr (maximum dt)
-        default_Ntout=10
+        default_Ntout=11
+        default_ts_out=np.linspace(0., default_tf, default_Ntout)
 
         default_Ntheta=1
         # default_pcapture=1.
@@ -76,7 +77,17 @@ class simulation:
         self.alphav=alphav if alphav is not None else default_alphav
         # self.fion=fion if fion is not None else default_fion
         self.mu0=mu0 if mu0 is not None else default_mu0
-        self.tf=tf if tf is not None else default_tf
+
+        ### output epochs
+        if isinstance(ts_out, np.ndarray):
+            if (ts_out >= 0.).all() and np.all(ts_out[1:] >= ts_out[:-1]) and ts_out[-1]<2.0e10:
+                self.ts_out=ts_out
+            else:
+                sys.exit('ts_out contains some negative epochs or it is not monotonically increasing or tf is longer than the age of the universe')
+        else:
+            self.ts_out=default_ts_out
+        self.Nt2=self.ts_out.shape[0]
+        self.tf=self.ts_out[-1]
         self.dt0=dt0 if dt0 is not None else default_dt0
         
         ################################
@@ -112,9 +123,13 @@ class simulation:
         self.dt=min(0.1*self.dz**2./self.nuv_au2_yr, self.dt0) # yr 
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
-        self.Ntout=Ntout if Ntout is not None and Ntout>0 else default_Ntout
-        self.dt_skip=int((self.Nt)/self.Ntout)
+
+        if self.ts_out[0]>0. and ts_out[0]<self.dt:
+            sys.exit('1st output epoch >0 and shorter than simulation timestep')
+        if self.ts_out[1]<self.dt: sys.exit('2nd output epoch is shorter than simulation timestep')
         
+        # self.Ntout=Ntout if Ntout is not None and Ntout>0 else default_Ntout
+        # self.dt_skip=int((self.Nt)/self.Ntout)
         
         dir_path = os.path.dirname(os.path.realpath(__file__))+'/photodissociation/'
 
@@ -127,31 +142,6 @@ class simulation:
         self.photodissociation=photodissociation
         self.ionization=ionization
 
-        self.verbose=verbose                           
-        if self.verbose:
-            print('Zmax = %1.1f au'%(self.zmax))
-            print('Nz = %i'%(self.Nz))
-            print('Nt simulation=%i'%self.Nt)
-            print('simulation timestep = %1.1f yr'%self.dt)
-            # print('vertical diffusion timescale to cross one vertical bin = %1.1e yr'%(self.dz**2./self.nuv_au2_yr))
-            print('t_diffusion = %1.1e yr'%self.tvisv)
-            print('t_vis = %1.1e yr'%self.tvisr)
-            print('MdotCO at t=0 is %1.1e Mearth/yr'%(self.MdotCO))
-            print('T = %1.1f K'%(self.Tb))
-
-
-        ### expected surface density
-        self.Sigma_eq=self.MdotCO/(3.*np.pi*self.nur_au2_yr)
-        self.rho_eq_midplane=self.Sigma_eq/(np.sqrt(2.*np.pi)*self.H)
-        self.Sigma_dot=self.MdotCO/(2.*np.pi*self.rbelt*np.sqrt(2.*np.pi)*self.sig_belt)
-        self.rho_eq_unshielded=self.Sigma_dot*130./(np.sqrt(2.*np.pi)*self.H)
-
-        ######## initial condition
-        self.rhos0=np.zeros((3, self.Nz)) 
-        self.rhotot=np.zeros(self.Nz)
-        self.rhotot= self.rho_eq_unshielded * np.exp( - 0.5* (self.zs/self.H)**2 )
-        self.rhos0[1,:]=self.rhotot*0.01
-        self.rhos0[0,:]=self.rhotot-self.rhos0[1,:]*28./12
         
          #### CO input rate
         if MdotCO==None: # calculate Mdot CO based on fir
@@ -179,6 +169,32 @@ class simulation:
         else:
             raise ValueError('input MdotCO must be a float greater than zero')
 
+
+        ### expected surface density
+        self.Sigma_eq=self.MdotCO[0]/(3.*np.pi*self.nur_au2_yr)
+        self.rho_eq_midplane=self.Sigma_eq/(np.sqrt(2.*np.pi)*self.H)
+        self.Sigma_dot=self.MdotCO[0]/(2.*np.pi*self.rbelt*np.sqrt(2.*np.pi)*self.sig_belt)
+        self.rho_eq_unshielded=self.Sigma_dot*130./(np.sqrt(2.*np.pi)*self.H)
+
+        ######## initial condition
+        self.rhos0=np.zeros((3, self.Nz)) 
+        self.rhotot=np.zeros(self.Nz)
+        self.rhotot= self.rho_eq_unshielded * np.exp( - 0.5* (self.zs/self.H)**2 )
+        self.rhos0[1,:]=self.rhotot*0.01
+        self.rhos0[0,:]=self.rhotot-self.rhos0[1,:]*28./12
+
+        self.verbose=verbose                           
+        if self.verbose:
+            print('Zmax = %1.1f au'%(self.zmax))
+            print('Nz = %i'%(self.Nz))
+            print('Nt simulation=%i'%self.Nt)
+            print('simulation timestep = %1.1f yr'%self.dt)
+            # print('vertical diffusion timescale to cross one vertical bin = %1.1e yr'%(self.dz**2./self.nuv_au2_yr))
+            print('t_diffusion = %1.1e yr'%self.tvisv)
+            print('t_vis = %1.1e yr'%self.tvisr)
+            print('MdotCO at t=0 is %1.1e Mearth/yr'%(self.MdotCO[0]))
+            print('MdotCO at t=%1.1e is %1.1e Mearth/yr'%(self.ts_sim[-1], self.MdotCO[-1]))
+            print('T = %1.1f K'%(self.Tb))
     ##############################################
     ################ METHODS ###################
     ##############################################
@@ -307,27 +323,18 @@ class simulation:
     def vertical_evolution(self):
         ### function to evolve the disc until self.tf
 
-        if isinstance(self.dt_skip, int) and self.dt_skip>0:
-            if self.dt_skip>1:  #  skips dt_skip to make arrays smaller
-                if (self.Nt-1)%self.dt_skip==0:
-                    self.Nt2=int((self.Nt-1)/self.dt_skip+1)
-                else:
-                    self.Nt2=int((self.Nt-1)/self.dt_skip+2)
-            elif self.dt_skip==1:
-                self.Nt2=self.Nt
-        else:
-            raise ValueError('not a valid dt_skip')
-        if self.verbose:
-            print('Nt output=%i'%self.Nt2)
     
         self.ts=np.zeros(self.Nt2)
         self.rhos=np.zeros((3, self.Nz,self.Nt2 ))
-        self.rhos[:,:,0]=self.rhos0
-            
-        rho_temp=self.rhos[:,:,0]*1.0
+        if self.ts_out[0]==0.:
+            self.rhos[:,:,0]=self.rhos0
+            self.ts[0]=0.
+            j=1
+        else:  j=0
+
+        rho_temp=self.rhos0*1.0
         self.update_column_densities(rho_temp)
 
-        j=1
         for i in range(1,self.Nt):
 
 
@@ -336,11 +343,11 @@ class simulation:
             
             # time step
             rho_temp=self.Rho_next(rho_temp, self.MdotCO[i])
-            
-            if i%self.dt_skip==0.0 or i==self.Nt-1:
-                self.rhos[:,:,j]=rho_temp*1.
+            if self.ts_sim[i]>=self.ts_out[j]:
                 self.ts[j]=self.ts_sim[i]
+                self.rhos[:,:,j]=rho_temp*1.
                 j+=1
+            
         print('simulation finished')
 
 

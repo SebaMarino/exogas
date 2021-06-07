@@ -43,12 +43,10 @@ class simulation:
         floor value of the surface density in Mearth/au**2 at the start of the simulation at rc.
     rc: float
         cut-off radius of the initial surface density in au.
-    tf: float
-        simulation final time in yr.
+    ts_out: numpy array 
+        epochs that we want to obtain.
     dt0: float
         maximum timestep in yr.
-    dt_skip: int
-        final output of the surface densities will skip every dt_skip timesteps (saves storage space).
     Tb: float
         temperature at the belt center in K.
     cs_b: float
@@ -98,7 +96,7 @@ class simulation:
     Sigma0: 2d numpy array (2, Nr)
         Initial surface density
     ts: 1d numpy array
-        array of Nt/dt_skip simulated epochs
+        array of exact output epochs (differ by dt with respect ts_out)
     Sigma_g: Nd numpy array (2, Nr, Nt/dt_skip)
         array containing the surface density of CO and C as a function of radius and time
     mixed: boolean, optional
@@ -126,7 +124,7 @@ class simulation:
 
     """
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  ts_out=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
         """
         Parameters
         ----------
@@ -218,6 +216,8 @@ class simulation:
         ##  simulation parameters
         default_tf=1.0e7 # yr
         default_dt0=60. # yr (maximum dt)
+        default_Ntout=11
+        default_ts_out=np.linspace(0., default_tf, default_Ntout)
 
         default_pcapture=1.
         default_preform=1.
@@ -255,9 +255,18 @@ class simulation:
         self.mu0=mu0 if mu0 is not None else default_mu0
         self.Sigma_floor=Sigma_floor if Sigma_floor is not None else default_Sigma_floor
         self.rc=rc if rc is not None else default_rc
-        self.tf=tf if tf is not None else default_tf
+
+        ### output epochs
+        if isinstance(ts_out, np.ndarray):
+            if (ts_out >= 0.).all() and np.all(ts_out[1:] >= ts_out[:-1]) and ts_out[-1]<2.0e10:
+                self.ts_out=ts_out
+            else:
+                sys.exit('ts_out contains some negative epochs or it is not monotonically increasing or tf is longer than the age of the universe')
+        else:
+            self.ts_out=default_ts_out
+        self.Nt2=self.ts_out.shape[0]
+        self.tf=self.ts_out[-1]
         self.dt0=dt0 if dt0 is not None else default_dt0
-        self.dt_skip=dt_skip
         
         ################################
         #### calculate basic properties of the simulation
@@ -289,7 +298,10 @@ class simulation:
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
 
-
+        if self.ts_out[0]>0. and ts_out[0]<self.dt:
+            sys.exit('1st output epoch >0 and shorter than simulation timestep')
+        if self.ts_out[1]<self.dt: sys.exit('2nd output epoch is shorter than simulation timestep')
+        
         #### CO input rate
         if MdotCO==None: # calculate Mdot CO based on fir
             if self.tcoll<0.:
@@ -491,35 +503,26 @@ class simulation:
     def viscous_evolution(self):
         ### function to evolve the disc until self.tf
 
-        if isinstance(self.dt_skip, int) and self.dt_skip>0:
-            if self.dt_skip>1:  #  skips dt_skip to make arrays smaller
-                if (self.Nt-1)%self.dt_skip==0:
-                    self.Nt2=int((self.Nt-1)/self.dt_skip+1)
-                else:
-                    self.Nt2=int((self.Nt-1)/self.dt_skip+2)
-            elif self.dt_skip==1:
-                self.Nt2=self.Nt
-        else:
-            raise ValueError('not a valid dt_skip')
-        if self.verbose:
-            print('Nt output=%i'%self.Nt2)
-    
+
         self.ts=np.zeros(self.Nt2)
         self.Sigma_g=np.zeros((2,self.grid.Nr,self.Nt2))
     
+        if self.ts_out[0]==0.:
+            self.Sigma_g[:,:,0]=self.Sigma0
+            self.ts[0]=0.
+            j=1
+        else:  j=0
     
-    
-        self.Sigma_g[:,:,0]=self.Sigma0
             
-        Sigma_temp=self.Sigma_g[:,:,0]*1.0
-        j=1
+        Sigma_temp=self.Sigma0*1.0
+
         for i in range(1,self.Nt):
             mask_m=np.sum(Sigma_temp, axis=0)>0.0
             self.mus[mask_m]=(Sigma_temp[0,mask_m]+Sigma_temp[1,mask_m]*(1.+16./12.))/(Sigma_temp[0,mask_m]/28.+Sigma_temp[1,mask_m]/6.) # Sigma+Oxigen/(N)
     
             Sigma_temp=self.Sigma_next(Sigma_temp, self.MdotCO[i], self.fir[i])
             
-            if i%self.dt_skip==0.0 or i==self.Nt-1:
+            if self.ts_sim[i]>=self.ts_out[j]:
                 self.Sigma_g[:,:,j]=Sigma_temp*1.
                 self.ts[j]=self.ts_sim[i]
                 j+=1
