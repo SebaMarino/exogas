@@ -30,14 +30,11 @@ class simulation:
         default_fir=1.0e-3 # fractional luminosity
         default_tcoll=-1.
         
-        #default_fir=1.0e-3 # fractional luminosity
-        #default_tcoll=-1.
         
         ## gas parameters
         default_alphar=1.0e-3
         default_alphav=1.0e-3
-        # default_fco=0.1
-        # default_fion=0.0
+        default_fco=0.1
         default_mu0=14.0
         
         ##  simulation parameters
@@ -72,10 +69,9 @@ class simulation:
 
             
         #### gas parameters
-        # self.fco=fco if fco is not None else default_fco
+        self.fco=fco if fco is not None else default_fco
         self.alphar=alphar if alphar is not None else default_alphar
         self.alphav=alphav if alphav is not None else default_alphav
-        # self.fion=fion if fion is not None else default_fion
         self.mu0=mu0 if mu0 is not None else default_mu0
 
         ### output epochs
@@ -94,6 +90,11 @@ class simulation:
         #### calculate basic properties of the simulation
         ################################
 
+        self.diffusion=diffusion
+        self.photodissociation=photodissociation
+        self.ionization=ionization
+
+        
         #### temperature and viscosity at the belt center
         if T==None or T<=0.0:
             self.Tb=278.3*(self.Lstar**0.25)*self.rbelt**(-0.5) # K # Temperature at belt
@@ -120,7 +121,11 @@ class simulation:
         self.thetas=np.linspace(0., np.pi/2.-1.0e-3, self.Ntheta)
         
         #### temporal grid
-        self.dt=min(0.1*self.dz**2./self.nuv_au2_yr, self.dt0) # yr 
+        if self.photodissociation or self.ionization:
+            self.dt=min(0.1*self.dz**2./self.nuv_au2_yr, self.dt0) # yr
+        else:
+            self.dt=0.1*self.dz**2./self.nuv_au2_yr
+            
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
 
@@ -128,8 +133,6 @@ class simulation:
             sys.exit('1st output epoch >0 and shorter than simulation timestep')
         if self.ts_out[1]<self.dt: sys.exit('2nd output epoch is shorter than simulation timestep')
         
-        # self.Ntout=Ntout if Ntout is not None and Ntout>0 else default_Ntout
-        # self.dt_skip=int((self.Nt)/self.Ntout)
         
         dir_path = os.path.dirname(os.path.realpath(__file__))+'/photodissociation/'
 
@@ -138,9 +141,6 @@ class simulation:
         self.minNCO=table_selfshielding[0,0]
         self.maxNCO=table_selfshielding[0,-1]
         
-        self.diffusion=diffusion
-        self.photodissociation=photodissociation
-        self.ionization=ionization
 
         
          #### CO input rate
@@ -180,8 +180,8 @@ class simulation:
         self.rhos0=np.zeros((3, self.Nz)) 
         self.rhotot=np.zeros(self.Nz)
         self.rhotot= self.rho_eq_unshielded * np.exp( - 0.5* (self.zs/self.H)**2 )
-        self.rhos0[1,:]=self.rhotot*0.01
-        self.rhos0[0,:]=self.rhotot-self.rhos0[1,:]*28./12
+        self.rhos0[1,:]=self.rhotot*1.0e-10
+        self.rhos0[0,:]=self.rhotot*1.0e-10# -self.rhos0[1,:]*28./12
 
         self.verbose=verbose                           
         if self.verbose:
@@ -226,27 +226,19 @@ class simulation:
     
         return rhodot_diff
 
-    def Viscous_eovlution(self, rho_temp):
+    def Viscous_eovlution(self, rho_temp, t):
 
-        tau= 2./3. * self.rbelt / self.nur_au2_yr * np.sqrt(2.*np.pi)*self.sig_belt # yr
+        tau= 2./3. * self.rbelt * np.sqrt(2.*np.pi)*self.sig_belt / self.nur_au2_yr  # yr
         return rho_temp/tau
 
     def Gas_input(self, MdotCO):
         
         # Mdot in earth masses / yr
-        return MdotCO/(2.*np.pi*self.rbelt*self.sig_belt*np.sqrt(2.*np.pi)) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)
+        return MdotCO/(np.sqrt(2.*np.pi)*self.sig_belt*2.*np.pi*self.rbelt) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H) 
 
 
     def Photodissociation_CO(self,rho_temp):
     
-        #NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
-        #NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
-
-        #NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
-        #NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
-    
-        #NCOs_bottom=NCO_tot-NCOs_top
-        #NCIs_bottom=NCI_tot-NCIs_top
 
         if self.Ntheta>1:
             # integrate over 4pi assuming density is constant with z
@@ -291,9 +283,6 @@ class simulation:
     def R_ion(self, rho_temp):
         t_ion=1.040e2 # yr
 
-        #NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
-        #NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
-        #NCIs_bottom=NCI_tot-NCIs_top
 
         if self.Ntheta>1.:
             R_top= np.trapz(np.sin(self.thetas)* np.exp(- self.NCIs_top[:,None]*sigma_c1/np.cos(self.thetas)), self.thetas , axis=1)
@@ -342,7 +331,7 @@ class simulation:
             self.update_column_densities(rho_temp)
             
             # time step
-            rho_temp=self.Rho_next(rho_temp, self.MdotCO[i])
+            rho_temp=self.Rho_next(rho_temp, self.MdotCO[i], self.ts_sim[i])
             if self.ts_sim[i]>=self.ts_out[j]:
                 self.ts[j]=self.ts_sim[i]
                 self.rhos[:,:,j]=rho_temp*1.
@@ -353,12 +342,12 @@ class simulation:
 
 
 
-    def Rho_next(self, rho_temp, MdotCO):
+    def Rho_next(self, rho_temp, MdotCO,t):
 
         ###########################################
         ################ viscous evolution
         ###########################################
-        rho_next=rho_temp - self.dt*self.Viscous_eovlution(rho_temp)
+        rho_next=rho_temp - self.dt*self.Viscous_eovlution(rho_temp,t)
         ###########################################
         ############### CO mas input rate
         ###########################################

@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import interpolate
-import os
+import sys, os
 from exogas.constants import *
 
 
@@ -272,6 +272,18 @@ class simulation:
         #### calculate basic properties of the simulation
         ################################
 
+
+         #### switches
+        self.diffusion=diffusion
+        self.photodissociation=photodissociation
+        self.carbon_capture=carbon_capture
+        if self.carbon_capture:
+            self.pcapture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
+        self.co_reformation=co_reformation
+        if self.co_reformation:
+            self.preform=preform if (preform is not None and (preform<=1. and preform>=0.)) else default_preform
+        self.mixed=mixed
+        
         #### temperature and viscosity at the belt center
         self.Tb=278.3*(self.Lstar**0.25)*self.rbelt**(-0.5) # K # Temperature at belt
         self.cs_b=np.sqrt(kb*self.Tb/(self.mu0*mp)) # m/s sounds speed at belt
@@ -294,7 +306,11 @@ class simulation:
         self.mus=np.ones(self.grid.Nr)*self.mu0
         self.nus=self.alpha*kb*self.Ts/(self.mus*mp)/(self.Omegas_s) # m2/s 1.0e13*np.ones(Nr) #
         self.nus_au2_yr=self.nus*year_s/(au_m**2.0)
-        self.dt=min(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0], self.dt0) # yr 
+
+        if self.photodissociation:
+            self.dt=min(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0], self.dt0) # yr
+        else:
+            self.dt=0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
 
@@ -344,24 +360,16 @@ class simulation:
         #     raise ValueError('Could not load the photodissociation table files.')
         self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
                 
-        #### switches
-        self.diffusion=diffusion
-        self.photodissociation=photodissociation
-        self.carbon_capture=carbon_capture
-        if self.carbon_capture:
-            self.pcapture=pcapture if (pcapture is not None and (pcapture<=1. and pcapture>=0.)) else default_pcapture
-        self.co_reformation=co_reformation
-        if self.co_reformation:
-            self.preform=preform if (preform is not None and (preform<=1. and preform>=0.)) else default_preform
-        self.mixed=mixed
+       
         
         self.verbose=verbose                           
         if self.verbose:
+            print('Rmin = %1.1f au'%(self.grid.rmin))
             print('Rmax = %1.1f au'%(self.grid.rmax))
             print('Nr = %i'%(self.grid.Nr))
             print('Nt simulation=%i'%self.Nt)
             print('simulation timestep = %1.1f yr'%self.dt)
-            print('viscous timescale to cross one radial bin = %1.1f yr'%(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]))
+            print('viscous timescale to cross one radial bin = %1.1f yr'%(self.grid.hs[0]**2./self.nus_au2_yr[0]))
             print('tvis = %1.1e yr'%self.tvis)
             print('Mdot CO at t=0 is %1.1e Mearth/yr'%(self.MdotCO[0]))
             print('Mdot CO at t=tf is %1.1e Mearth/yr'%(self.MdotCO[-1]))
@@ -495,7 +503,9 @@ class simulation:
         
         mask_belt=((self.grid.rs<self.rbelt+self.width) & (self.grid.rs>self.rbelt-self.width))
         Sdot_comets=np.zeros(self.grid.Nr)
-        Sdot_comets[mask_belt]=np.exp( -2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
+        #Sdot_comets[mask_belt]=np.exp( -2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
+
         Sdot_comets[mask_belt]=MdotCO*Sdot_comets[mask_belt]/(2.*np.pi*np.sum(Sdot_comets[mask_belt]*self.grid.rs[mask_belt]*self.grid.hs[mask_belt]))
 
         return Sdot_comets
@@ -600,7 +610,7 @@ class simulation:
         ax3.plot(self.ts/1.0e6, MCOs, color='C0', label='CO')
         ax3.plot(self.ts/1.0e6, MC1s*(1.0-self.fion), color='C1', label='CI')
 
-        MCO_st=self.MdotCO*120.0 # solution in quasy steady state if CO is unshielded. Note that self.dotCO is larger than self.ts because it does not skip any epochs. Its corresponding time array is self.ts_sim
+        MCO_st=self.MdotCO*130.0 # solution in quasy steady state if CO is unshielded. Note that self.dotCO is larger than self.ts because it does not skip any epochs. Its corresponding time array is self.ts_sim
         MC1_st=self.MdotCO*m_c1/m_co * (2.*self.rbelt / (3.*self.nus_au2_yr[0]*(1./self.grid.rs[0])))*(1.+2.*(rmax_mtot/self.rbelt)**0.5-1.0) # From integrating Metzeger equations
         ax3.plot(self.ts_sim/1.0e6, MCO_st, color='C0', ls='dashed')
         ax3.plot(self.ts_sim/1.0e6, MC1_st, color='C1', ls='dashed')
