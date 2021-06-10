@@ -503,8 +503,8 @@ class simulation:
         
         mask_belt=((self.grid.rs<self.rbelt+self.width) & (self.grid.rs>self.rbelt-self.width))
         Sdot_comets=np.zeros(self.grid.Nr)
-        #Sdot_comets[mask_belt]=np.exp( -2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
-        Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
+        Sdot_comets[mask_belt]=np.exp( -2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        #Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
 
         Sdot_comets[mask_belt]=MdotCO*Sdot_comets[mask_belt]/(2.*np.pi*np.sum(Sdot_comets[mask_belt]*self.grid.rs[mask_belt]*self.grid.hs[mask_belt]))
 
@@ -550,8 +550,8 @@ class simulation:
             ts_plot=np.logspace(3, int(np.log10(self.tf)), int(np.log10(self.tf))-3+1)
 
         ### critical surface densities
-        sigma_C1c=(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
-        sigma_COc=(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
+        sigma_C1c=2*(1./sigma_c1)*m_c1/Mearth*au_cm**2.0 # mearth/au2
+        sigma_COc=2*(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
 
 
         fig=plt.figure(figsize=(18,6))

@@ -121,10 +121,14 @@ class simulation:
         self.thetas=np.linspace(0., np.pi/2.-1.0e-3, self.Ntheta)
         
         #### temporal grid
-        if self.photodissociation or self.ionization:
-            self.dt=min(0.1*self.dz**2./self.nuv_au2_yr, self.dt0) # yr
+        if (self.photodissociation or self.ionization) and self.diffusion:
+            self.dt=min(0.1*self.tvisv, self.dt0) # yr
+        elif self.diffusion:
+            self.dt=0.1*self.tvisv
+        elif self.photodissociation or self.ionization:
+            self.dt=self.dt0
         else:
-            self.dt=0.1*self.dz**2./self.nuv_au2_yr
+             self.dt=0.02*self.tvisr
             
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
@@ -234,7 +238,7 @@ class simulation:
     def Gas_input(self, MdotCO):
         
         # Mdot in earth masses / yr
-        return MdotCO/(np.sqrt(2.*np.pi)*self.sig_belt*2.*np.pi*self.rbelt) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H) 
+        return MdotCO/(np.sqrt(2.*np.pi)*(self.sig_belt/2.)*2.*np.pi*self.rbelt) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)  # factor 2 dividing sig_belt is to make Mdot prop to Sigma**2 
 
 
     def Photodissociation_CO(self,rho_temp):
@@ -304,10 +308,20 @@ class simulation:
 
         NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
         NCI_tot=2*np.trapz(rho_temp[1,:], self.zs)*Mearth/au_cm**2./(12.*mp)
-        self.NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
-        self.NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
-        self.NCOs_bottom=NCO_tot-self.NCOs_top
-        self.NCIs_bottom=NCI_tot-self.NCIs_top
+        # self.NCOs_top=np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp)
+        # self.NCIs_top=np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp)
+        # self.NCOs_bottom=NCO_tot-self.NCOs_top
+        # self.NCIs_bottom=NCI_tot-self.NCIs_top
+
+        ### modification to not include the column density contained in cell
+        self.NCOs_top=np.roll( np.cumsum(rho_temp[0,::-1])[::-1]*self.dz*Mearth/au_cm**2./(28.*mp), -1) # roll by one to have column density on top
+        self.NCIs_top=np.roll( np.cumsum(rho_temp[1,::-1])[::-1]*self.dz*Mearth/au_cm**2./(12.*mp), -1) # roll by one to have column density on top
+
+        self.NCOs_top[-1]=0.
+        self.NCIs_top[-1]=0.
+        
+        self.NCOs_bottom=NCO_tot-self.NCOs_top - rho_temp[0,:]*self.dz*Mearth/au_cm**2./(28.*mp)
+        self.NCIs_bottom=NCI_tot-self.NCIs_top - rho_temp[1,:]*self.dz*Mearth/au_cm**2./(12.*mp)
         
     def vertical_evolution(self):
         ### function to evolve the disc until self.tf
