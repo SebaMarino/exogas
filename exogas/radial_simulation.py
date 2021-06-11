@@ -806,7 +806,7 @@ def Mtot_t(Mtot0, t, r, dr,  rho=2700.0, Dc=10.0, e=0.05, I=0.05, Qd=150.0, Msta
     # t in years
     tc0=f_tc_Xc(Mtot0, r, dr, rho, Dc, e, I, Qd, Mstar, q=q)
     if hasattr(tc0, "__len__"):
-        for i in xrange(len(tc0)):
+        for i in range(len(tc0)):
             if tc0[i]<0.0:
                 tc0[i]=f_tc_simple(Mtot0[i], r[i], dr[i],  Dc, e, Qd, Mstar[i])
     else:
@@ -826,7 +826,7 @@ def Mtotdot_t(Mtot0, t, r, dr, rho=2700.0,  Dc=10.0, e=0.05, I=0.05, Qd=150.0, M
     tc0=f_tc_Xc(Mtot0, r, dr, rho,  Dc, e, I, Qd, Mstar, q=q)
 
     if hasattr(tc0, "__len__"):
-        for i in xrange(len(tc0)):
+        for i in range(len(tc0)):
             if tc0[i]<0.0:
                 tc0[i]=f_tc_simple(Mtot0[i], r[i], dr[i],  Dc, e, Qd, Mstar[i])
     else:
