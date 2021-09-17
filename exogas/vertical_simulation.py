@@ -4,6 +4,7 @@ from scipy import interpolate
 import sys,os
 from exogas.constants import *
 import exogas.radial_simulation as rsim
+from tqdm import tqdm
 
 class simulation:
 
@@ -338,7 +339,7 @@ class simulation:
         rho_temp=self.rhos0*1.0
         self.update_column_densities(rho_temp)
 
-        for i in range(1,self.Nt):
+        for i in tqdm(range(1,self.Nt)):
 
 
             ### update column densities

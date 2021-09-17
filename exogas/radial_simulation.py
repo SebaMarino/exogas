@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy import interpolate
 import sys, os
 from exogas.constants import *
-
+from tqdm import tqdm
 
 class simulation:
     """
@@ -97,7 +97,7 @@ class simulation:
         Initial surface density
     ts: 1d numpy array
         array of exact output epochs (differ by dt with respect ts_out)
-    Sigma_g: Nd numpy array (2, Nr, Nt/dt_skip)
+    Sigma_g: Nd numpy array (2, Nr, Nt2)
         array containing the surface density of CO and C as a function of radius and time
     mixed: boolean, optional
              whether CO and carbon are vertically mixed or not.
@@ -162,8 +162,6 @@ class simulation:
              maximum timestep in yr.
         verbose: boolean, optional
              whether to print or not some values.
-        dt_skip: int, optional
-             final output of the surface densities will skip every dt_skip timesteps (saves storage space).
         diffusion: boolean, optional
              whether or not include radial diffusion.
         photodissociation: boolean, optional
@@ -526,7 +524,7 @@ class simulation:
             
         Sigma_temp=self.Sigma0*1.0
 
-        for i in range(1,self.Nt):
+        for i in tqdm(range(1,self.Nt)):
             mask_m=np.sum(Sigma_temp, axis=0)>0.0
             self.mus[mask_m]=(Sigma_temp[0,mask_m]+Sigma_temp[1,mask_m]*(1.+16./12.))/(Sigma_temp[0,mask_m]/28.+Sigma_temp[1,mask_m]/6.) # Sigma+Oxigen/(N)
     
