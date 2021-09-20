@@ -124,7 +124,7 @@ class simulation:
 
     """
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  ts_out=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
         """
         Parameters
         ----------
@@ -234,12 +234,17 @@ class simulation:
                 raise ValueError('rmin>rmax')
     
         self.resolution=resolution if resolution is not None else default_resolution
-
+        
         #### belt
         self.rbelt=rbelt if rbelt is not None else default_rbelt
         self.width=width if width is not None else self.rbelt*0.5
         self.sig_belt=self.width/(2.0*np.sqrt(2.*np.log(2.)))
         self.fir=fir if fir is not None else default_fir
+
+        if self.resolution>self.width/self.rbelt/5.:
+            print('Changing resolution to resolve belt width with 5 bins')
+            self.resolution=self.width/self.rbelt/5.
+
         try: 
             if tcoll>0.:
                 self.tcoll=tcoll
@@ -271,7 +276,8 @@ class simulation:
         ################################
 
 
-         #### switches
+        #### switches
+        self.viscous=viscous
         self.diffusion=diffusion
         self.photodissociation=photodissociation
         self.carbon_capture=carbon_capture
@@ -305,16 +311,26 @@ class simulation:
         self.nus=self.alpha*kb*self.Ts/(self.mus*mp)/(self.Omegas_s) # m2/s 1.0e13*np.ones(Nr) #
         self.nus_au2_yr=self.nus*year_s/(au_m**2.0)
 
-        if self.photodissociation:
+        
+        if self.photodissociation and self.vicous:
             self.dt=min(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0], self.dt0) # yr
-        else:
+        elif self.viscous:
             self.dt=0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]
+        else:
+            self.dt=self.dt0
+            
+
+        if self.ts_out[0]==0.:
+            i_epoch=1
+        else: i_epoch=0
+        if ts_out[i_epoch]<=self.dt:
+            #sys.exit('1st output epoch >0 and shorter than simulation timestep = %1.1e yr'%(self.dt))
+            print('1st or 2nd output epoch is shorter than default simulation timestep of %1.1e yr'%(self.dt))
+            print('lowering the timestep to %1.1e yr'%ts_out[i_epoch])
+            self.dt=ts_out[i_epoch]
+
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
-
-        if self.ts_out[0]>0. and ts_out[0]<self.dt:
-            sys.exit('1st output epoch >0 and shorter than simulation timestep')
-        if self.ts_out[1]<self.dt: sys.exit('2nd output epoch is shorter than simulation timestep')
         
         #### CO input rate
         if MdotCO==None: # calculate Mdot CO based on fir
@@ -388,10 +404,12 @@ class simulation:
         ###########################################
         ################ viscous evolution
         ###########################################
-        Sdot_vis, Sigma_vr_halfs=self.Sigma_dot_vis(Sigma_prev)
-        Snext= Sigma_prev + self.dt*Sdot_vis # viscous evolution
+        if self.viscous:
+            Sdot_vis, Sigma_vr_halfs=self.Sigma_dot_vis(Sigma_prev)
+            Snext= Sigma_prev + self.dt*Sdot_vis # viscous evolution
 
-            
+        else:
+            Snext=Sigma_prev*1.
         ###########################################
         ############### inner boundary condition
         ###########################################
@@ -501,7 +519,7 @@ class simulation:
         
         mask_belt=((self.grid.rs<self.rbelt+self.width) & (self.grid.rs>self.rbelt-self.width))
         Sdot_comets=np.zeros(self.grid.Nr)
-        Sdot_comets[mask_belt]=np.exp( -2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        Sdot_comets[mask_belt]=np.exp( -0.5* 2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
         #Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
 
         Sdot_comets[mask_belt]=MdotCO*Sdot_comets[mask_belt]/(2.*np.pi*np.sum(Sdot_comets[mask_belt]*self.grid.rs[mask_belt]*self.grid.hs[mask_belt]))

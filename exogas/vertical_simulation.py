@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 class simulation:
 
-    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, diffusion=True, photodissociation=True, ionization=True, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
+    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, ionization=True, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
 
 
         # fco=None, fir=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
@@ -91,6 +91,7 @@ class simulation:
         #### calculate basic properties of the simulation
         ################################
 
+        self.viscous=viscous
         self.diffusion=diffusion
         self.photodissociation=photodissociation
         self.ionization=ionization
@@ -126,18 +127,42 @@ class simulation:
             self.dt=min(0.1*self.tvisv, self.dt0) # yr
         elif self.diffusion:
             self.dt=0.1*self.tvisv
-        elif self.photodissociation or self.ionization:
+        elif self.viscous:
+            self.dt=0.02*self.tvisr
+        else:   # self.photodissociation or self.ionization:
             self.dt=self.dt0
-        else:
-             self.dt=0.02*self.tvisr
-            
+
+        if self.ts_out[0]==0.:
+            i_epoch=1
+        else: i_epoch=0
+
+        if ts_out[i_epoch]<=self.dt:
+            #sys.exit('1st output epoch >0 and shorter than simulation timestep = %1.1e yr'%(self.dt))
+            print('1st or 2nd output epoch is shorter than default simulation timestep of %1.1e yr'%(self.dt))
+            print('lowering the timestep to %1.1e yr'%ts_out[i_epoch])
+            self.dt=ts_out[i_epoch]
+
+
         self.Nt=int(self.tf/self.dt)+1
         self.ts_sim=np.linspace(0.0, self.tf, self.Nt)
-
-        if self.ts_out[0]>0. and ts_out[0]<self.dt:
-            sys.exit('1st output epoch >0 and shorter than simulation timestep')
-        if self.ts_out[1]<self.dt: sys.exit('2nd output epoch is shorter than simulation timestep')
         
+        # this is to calculate numerically a factor used to calculate the gas input rate
+        Nr=10000
+        rs=np.linspace(1.0e-11, self.rbelt+self.width*3, Nr)
+        dr=rs[1]-rs[0]
+        Sdot_comets=np.zeros(Nr)
+        Sdot_comets=np.exp( -0.5* 2* (rs-self.rbelt)**2.0 / (self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        #Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
+        Sdot_comets=Sdot_comets/(2.*np.pi*np.sum(Sdot_comets*rs*dr))
+        for ir in range(Nr):
+            if rs[ir]>self.rbelt:
+                ibelt=ir
+                break
+        self.geometry_belt=Sdot_comets[ibelt] * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H) 
+
+        # # this is to calculate numerically a factor used to calculate the gas input rate
+        # self.geometry_belt=1./(np.sqrt(2.*np.pi)*(self.sig_belt/np.sqrt(2.))*2.*np.pi*self.rbelt) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)  # factor sqrt(2) dividing sig_belt is to make Mdot prop to Sigma**2 
+
         
         dir_path = os.path.dirname(os.path.realpath(__file__))+'/photodissociation/'
 
@@ -239,7 +264,7 @@ class simulation:
     def Gas_input(self, MdotCO):
         
         # Mdot in earth masses / yr
-        return MdotCO/(np.sqrt(2.*np.pi)*(self.sig_belt/2.)*2.*np.pi*self.rbelt) * np.exp(-0.5* (self.zs/self.H)**2.)/(np.sqrt(2.*np.pi)*self.H)  # factor 2 dividing sig_belt is to make Mdot prop to Sigma**2 
+        return MdotCO*self.geometry_belt
 
 
     def Photodissociation_CO(self,rho_temp):
@@ -362,7 +387,10 @@ class simulation:
         ###########################################
         ################ viscous evolution
         ###########################################
-        rho_next=rho_temp - self.dt*self.Viscous_eovlution(rho_temp,t)
+        if self.viscous:
+            rho_next=rho_temp - self.dt*self.Viscous_eovlution(rho_temp,t)
+        else:
+            rho_next=rho_temp*1.
         ###########################################
         ############### CO mas input rate
         ###########################################
