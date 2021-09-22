@@ -312,7 +312,7 @@ class simulation:
         self.nus_au2_yr=self.nus*year_s/(au_m**2.0)
 
         
-        if self.photodissociation and self.vicous:
+        if self.photodissociation and self.viscous:
             self.dt=min(0.02*self.grid.hs[0]**2./self.nus_au2_yr[0], self.dt0) # yr
         elif self.viscous:
             self.dt=0.02*self.grid.hs[0]**2./self.nus_au2_yr[0]
