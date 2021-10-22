@@ -136,11 +136,11 @@ class simulation:
             i_epoch=1
         else: i_epoch=0
 
-        if ts_out[i_epoch]<=self.dt:
+        if self.ts_out[i_epoch]<=self.dt:
             #sys.exit('1st output epoch >0 and shorter than simulation timestep = %1.1e yr'%(self.dt))
             print('1st or 2nd output epoch is shorter than default simulation timestep of %1.1e yr'%(self.dt))
             print('lowering the timestep to %1.1e yr'%ts_out[i_epoch])
-            self.dt=ts_out[i_epoch]
+            self.dt=self.ts_out[i_epoch]
 
 
         self.Nt=int(self.tf/self.dt)+1
@@ -258,7 +258,8 @@ class simulation:
 
     def Viscous_eovlution(self, rho_temp, t):
 
-        tau= 2./3. * self.rbelt * np.sqrt(2.*np.pi)*self.sig_belt / self.nur_au2_yr  # yr
+        tau= 2./3. * self.rbelt * np.sqrt(2.*np.pi)*(self.sig_belt/np.sqrt(2.)) / self.nur_au2_yr  # yr derived from steady-state condition from Metzger+2012. Factor 1/sqrt(2) comes from the fact that release rate is prop to sigma**2
+        # tau=self.rbelt**2./ self.nur_au2_yr /8.
         return rho_temp/tau
 
     def Gas_input(self, MdotCO):
