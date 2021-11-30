@@ -294,7 +294,10 @@ class simulation:
         self.tvis=tau_vis(self.rbelt, self.alpha, self.cs_b, self.Mstar)
 
         #### spatial grid
-        rmax=max(self.rmax0, 3.0 * self.rbelt*(1.0+self.tf/self.tvis))# when Mdot becomes very small, the maximum radius is very important as it sets the evolution timescale.
+        if self.tcoll>0.:
+            rmax=max(self.rmax0, 3.0 * self.rbelt*(1.0+self.tf/self.tvis))# when Mdot becomes very small, the maximum radius is very important as it sets the evolution timescale.
+        else:
+            rmax=self.rmax0
         Nr=N_optim_radial_grid(self.rmin, rmax, self.rbelt, self.resolution)
         self.grid = simulation_grid(rmin=self.rmin, rmax=rmax, Nr=Nr, p=0.5) 
         for ir in range(Nr):
@@ -368,8 +371,11 @@ class simulation:
         dir_path = os.path.dirname(os.path.realpath(__file__))+'/photodissociation/'
         SCO_grid=np.loadtxt(dir_path+'Sigma_CO_Mearth_au2.txt')
         SC1_grid=np.loadtxt(dir_path+'Sigma_C1_Mearth_au2.txt')
-        tauCO_grid=np.loadtxt(dir_path+'tau_CO_yr.txt')
-            
+        if self.mixed:
+            tauCO_grid=np.loadtxt(dir_path+'tau_CO_yr_mixed.txt')
+        else:
+            tauCO_grid=np.loadtxt(dir_path+'tau_CO_yr_layered.txt')
+
         # except:
         #     raise ValueError('Could not load the photodissociation table files.')
         self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
@@ -444,10 +450,12 @@ class simulation:
         ############## photodissociation
         ###########################################
         if self.photodissociation:
-            if self.mixed:
-                tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
-            else:
-                tphCO=tau_CO_carbon_layer(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
+            
+            # if self.mixed:
+            #     tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
+            # else:
+            #     tphCO=tau_CO_carbon_layer(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
+            tphCO=tau_CO_matrix(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
             Sdot_ph=Sigma_prev[0,:]/tphCO
             Snext[0,:]=Snext[0,:]-self.dt*Sdot_ph
             Snext[1,:]=Snext[1,:]+self.dt*Sdot_ph*muc1co
@@ -759,7 +767,8 @@ def N_optim_radial_grid(rmin, rmax, rb, res):
             Nr=int(Nr*1.2)
     return Nr
 
-def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
+
+def tau_CO_matrix(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
 
     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
     # to avoid nans we use a floor value for sigmas of 1e-50
@@ -775,22 +784,38 @@ def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # inte
     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
     return tau # yr
 
-def tau_CO_carbon_layer(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
+# def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
 
-    tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
-    # to avoid nans we use a floor value for sigmas of 1e-50
-    Sigma_COp=Sigma_CO*1. 
-    Sigma_C1p=Sigma_C1*1.*(1.-fion)
-    Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
-    Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
+#     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
+#     # to avoid nans we use a floor value for sigmas of 1e-50
+#     Sigma_COp=Sigma_CO*1. 
+#     Sigma_C1p=Sigma_C1*1.*(1.-fion)
+#     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
+#     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
 
-    N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 / 2.  # the column density above CO is half of the total.
-    carbon_shielding=np.exp(sigma_c1*N_carbon)
-    tau_selfshielding=10**(log10tau_interp(np.log10(1.0e-50),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
-    tau=tau_selfshielding*carbon_shielding
+#     # mask=(Sigma_CO>1.0e-100) & (Sigma_C1>1.0e-100) # if not we get error in interpolation function and we get NaNs
+#     # if Sigma_CO[mask].shape[0]>0:
+#         # tau[mask]=10**(log10tau_interp(np.log10(Sigma_C1[mask]),np.log10(Sigma_CO[mask]), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
+
+#     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
+#     return tau # yr
+
+# def tau_CO_carbon_layer(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
+
+#     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
+#     # to avoid nans we use a floor value for sigmas of 1e-50
+#     Sigma_COp=Sigma_CO*1. 
+#     Sigma_C1p=Sigma_C1*1.*(1.-fion)
+#     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
+#     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
+
+#     N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 / 2.  # the column density above CO is half of the total.
+#     carbon_shielding=np.exp(sigma_c1*N_carbon)
+#     tau_selfshielding=10**(log10tau_interp(np.log10(1.0e-50),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
+#     tau=tau_selfshielding*carbon_shielding
 
     
-    return tau # yr
+#     return tau # yr
 
 
 ############## COLLISIONS

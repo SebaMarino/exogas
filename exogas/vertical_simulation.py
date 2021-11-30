@@ -123,13 +123,17 @@ class simulation:
         self.thetas=np.linspace(0., np.pi/2.-1.0e-3, self.Ntheta)
         
         #### temporal grid
-        if (self.photodissociation or self.ionization) and self.diffusion:
-            self.dt=min(0.1*self.tvisv, self.dt0) # yr
+        if (self.photodissociation or self.ionization):
+            if self.diffusion:
+                self.dt=min(0.1*self.tvisv, self.dt0) # yr
+                print('hey')
+            else:
+                self.dt=self.dt0
         elif self.diffusion:
             self.dt=0.1*self.tvisv
         elif self.viscous:
             self.dt=0.02*self.tvisr
-        else:   # self.photodissociation or self.ionization:
+        else:   
             self.dt=self.dt0
 
         if self.ts_out[0]==0.:
@@ -153,7 +157,7 @@ class simulation:
         Sdot_comets=np.zeros(Nr)
         Sdot_comets=np.exp( -0.5* 2* (rs-self.rbelt)**2.0 / (self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
         #Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
-        Sdot_comets=Sdot_comets/(2.*np.pi*np.sum(Sdot_comets*rs*dr))
+        Sdot_comets=Sdot_comets/(2.*np.pi*np.sum(Sdot_comets*rs*dr)) # normalized to 1
         for ir in range(Nr):
             if rs[ir]>self.rbelt:
                 ibelt=ir
@@ -201,10 +205,20 @@ class simulation:
 
 
         ### expected surface density
-        self.Sigma_eq=self.MdotCO[0]/(3.*np.pi*self.nur_au2_yr)
-        self.rho_eq_midplane=self.Sigma_eq/(np.sqrt(2.*np.pi)*self.H)
-        self.Sigma_dot=self.MdotCO[0]/(2.*np.pi*self.rbelt*np.sqrt(2.*np.pi)*self.sig_belt)
-        self.rho_eq_unshielded=self.Sigma_dot*130./(np.sqrt(2.*np.pi)*self.H)
+
+
+        self.rho_dot=self.MdotCO[0]*self.geometry_belt
+        self.rho_eq_unshielded = self.rho_dot * 130.
+        
+        # /(2.*np.pi*self.rbelt*np.sqrt(2.*np.pi)*self.sig_belt)
+        # self.rho_eq_unshielded=self.Sigma_dot*130./(np.sqrt(2.*np.pi)*self.H)
+
+        
+        
+        # self.Sigma_eq=self.MdotCO[0]*/(3.*np.pi*self.nur_au2_yr)
+        # self.rho_eq_midplane=self.Sigma_eq/(np.sqrt(2.*np.pi)*self.H)
+        # self.Sigma_dot=self.MdotCO[0]/(2.*np.pi*self.rbelt*np.sqrt(2.*np.pi)*self.sig_belt)
+        # self.rho_eq_unshielded=self.Sigma_dot*130./(np.sqrt(2.*np.pi)*self.H)
 
         ######## initial condition
         self.rhos0=np.zeros((3, self.Nz)) 
@@ -224,6 +238,7 @@ class simulation:
             print('t_vis = %1.1e yr'%self.tvisr)
             print('MdotCO at t=0 is %1.1e Mearth/yr'%(self.MdotCO[0]))
             print('MdotCO at t=%1.1e is %1.1e Mearth/yr'%(self.ts_sim[-1], self.MdotCO[-1]))
+            print('SigmadotCO at t=%1.1e is %1.1e Mearth/yr/au2'%(self.ts_sim[-1], Sdot_comets[ibelt]*self.MdotCO[-1]))
             print('T = %1.1f K'%(self.Tb))
     ##############################################
     ################ METHODS ###################
@@ -256,11 +271,13 @@ class simulation:
     
         return rhodot_diff
 
+    def viscous_tau(self):
+
+        return 2./3. * self.rbelt * np.sqrt(2.*np.pi)*(self.sig_belt/np.sqrt(2.)) / self.nur_au2_yr  # yr derived from steady-state condition from Metzger+2012. Factor 1/sqrt(2) comes from the fact that release rate is prop to sigma**2
+    
     def Viscous_eovlution(self, rho_temp, t):
 
-        tau= 2./3. * self.rbelt * np.sqrt(2.*np.pi)*(self.sig_belt/np.sqrt(2.)) / self.nur_au2_yr  # yr derived from steady-state condition from Metzger+2012. Factor 1/sqrt(2) comes from the fact that release rate is prop to sigma**2
-        # tau=self.rbelt**2./ self.nur_au2_yr /8.
-        return rho_temp/tau
+        return rho_temp/self.viscous_tau()
 
     def Gas_input(self, MdotCO):
         
@@ -312,8 +329,7 @@ class simulation:
             return kco*kcI 
 
     def R_ion(self, rho_temp):
-        t_ion=1.040e2 # yr
-
+        t_ion=1.0040e2 # yr # calculated a priori (consistent with Rollins+2012)
 
         if self.Ntheta>1.:
             R_top= np.trapz(np.sin(self.thetas)* np.exp(- self.NCIs_top[:,None]*sigma_c1/np.cos(self.thetas)), self.thetas , axis=1)
@@ -424,6 +440,7 @@ class simulation:
 
 def f_alpha_R(T):
     # CII, ionized carbon, z=6 and N=5 (remaining electrons)
+    # from Badnell+2006 2006ApJS..167..334B
     A=2.5e-9
     B=0.7849
     C=0.1597
@@ -431,4 +448,5 @@ def f_alpha_R(T):
     T1=1.943e6
     T2=4.955e4
     Bp=B+C*np.exp( -T2/T)
-    return A*( np.sqrt(T/T0) * (1.+(T/T0)**(0.5*(1.-Bp))) * (1.+(T/T1)**(0.5*(1.+Bp))) )**(-1.) # units of cm3 s-1
+    # return A*( np.sqrt(T/T0) * (1.+(T/T0)**(0.5*(1.-Bp))) * (1.+(T/T1)**(0.5*(1.+Bp))) )**(-1.) # units of cm3 s-1
+    return A*( np.sqrt(T/T0) * (1.+(T/T0)**0.5)**(1.-Bp) * (1.+(T/T1)**0.5)**(1.+Bp))**(-1.) # units of cm3 s-1
