@@ -1,3 +1,5 @@
-include exogas/photodissociation/tau_CO_yr.txt
+include exogas/photodissociation/tau_CO_yr_layered.txt
+include exogas/photodissociation/tau_CO_yr_mixed.txt
+include exogas/photodissociation/self-shielding.dat
 include exogas/photodissociation/Sigma_C1_Mearth_au2.txt
 include	exogas/photodissociation/Sigma_CO_Mearth_au2.txt
