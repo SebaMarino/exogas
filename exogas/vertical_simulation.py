@@ -249,7 +249,7 @@ class simulation:
     def Diffusion(self, rho_temp):
         # assume 0 index is midplane and -1 index is at Zmax
     
-        rhosp1=np.concatenate([rho_temp[:,1][:,None],rho_temp], axis=1)
+        rhosp1=np.concatenate([rho_temp[:,1][:,None],rho_temp], axis=1) # copies 2nd cell (just above the midplane) and puts it just below the midplane to extend vertical grid
 
     
         rho_tot=rhosp1[0,:]+(rhosp1[1,:]+rhosp1[2,:])*(28./12.) # CO+CI+CII+O, N+1
@@ -260,14 +260,14 @@ class simulation:
         eps[1,mask_m]=rhosp1[1,mask_m]/rho_tot[mask_m]
         eps[2,mask_m]=rhosp1[2,mask_m]/rho_tot[mask_m]
     
-        eps_dot_half=(eps[:,1:]-eps[:,:-1])/(self.dz) # Nz at cell boundaries
+        eps_dot_half=(eps[:,1:]-eps[:,:-1])/(self.dz) # Nz at cell boundaries # first derivative
     
         rho_tot_half=(rho_tot[1:]+rho_tot[:-1])/2. # Nz at cell boundaries
     
         F_half=(self.nuv_au2_yr*rho_tot_half*eps_dot_half) # Nz at cell boundaries
         
         rhodot_diff=np.zeros((3,self.Nz))    
-        rhodot_diff[:,:-1]= (F_half[:,1:]-F_half[:,:-1])/(self.dz) # Nz-1
+        rhodot_diff[:,:-1]= (F_half[:,1:]-F_half[:,:-1])/(self.dz) # Nz-1 # 2nd derivative
     
         return rhodot_diff
 
