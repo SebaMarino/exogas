@@ -8,6 +8,9 @@ Exogas is a python package to simulate the evolution of gas in a debris disc inc
 - carbon shielding
 - (optional and under testing) carbon capture and CO reformation
 
+It has two different modules. One for modelling the radial evolution
+and another to model the vertical evolution at the belt centre.
+
 ## Installation
 
 you can simply use pip, e.g. pip install exogas
