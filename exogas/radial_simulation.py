@@ -125,7 +125,7 @@ class simulation:
 
     """
 
-    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
+    def __init__(self, Mstar=None, Lstar=None, rmin=None, resolution=None, rmax0=None, rbelt=None, width=None, fir=None, fco=None, alpha=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=False):
         """
         Parameters
         ----------
@@ -368,7 +368,6 @@ class simulation:
         ### Grid of CO photodissociation timescales calculated using photon counting (a la Cataldi et al. 2020)
         ##########################################
 
-        # try:
         dir_path = os.path.dirname(os.path.realpath(__file__))+'/photodissociation/'
         SCO_grid=np.loadtxt(dir_path+'Sigma_CO_Mearth_au2.txt')
         SC1_grid=np.loadtxt(dir_path+'Sigma_C1_Mearth_au2.txt')
@@ -377,8 +376,6 @@ class simulation:
         else:
             tauCO_grid=np.loadtxt(dir_path+'tau_CO_yr_layered.txt')
 
-        # except:
-        #     raise ValueError('Could not load the photodissociation table files.')
         self.log10tau_interp=interpolate.RectBivariateSpline( np.log10(SC1_grid),np.log10(SCO_grid), np.log10(tauCO_grid)) # x and y must be swaped, i.e. (y,x) https://github.com/scipy/scipy/issues/3164
                 
        
@@ -608,9 +605,11 @@ class simulation:
             cmap=plt.get_cmap(cmap)
             x=vmin+(vmax-vmin)*i*1./(len(ts_plot)-1)
             colori=cmap(x)
-            
-            ax1.plot(self.grid.rs, self.Sigma_g[0,:,it], color=colori, label='%1.1e'%(ts_plot[i]/1.0e6)+' Myr')
-            ax2.plot(self.grid.rs, self.Sigma_g[1,:,it]*(1.0-self.fion), color=colori, label='%1.1e'%(ts_plot[i]/1.0e6)+' Myr')
+
+            time_str=sci_notation(ts_plot[i]/1.0e6, sig_fig=0)+' Myr'
+
+            ax1.plot(self.grid.rs, self.Sigma_g[0,:,it], color=colori, label=time_str)
+            ax2.plot(self.grid.rs, self.Sigma_g[1,:,it]*(1.0-self.fion), color=colori)
 
         ### draw critical surface densities
         ax1.axhline(sigma_COc, color='grey', ls='dashed')
@@ -778,45 +777,11 @@ def tau_CO_matrix(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate c
     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
 
-    # mask=(Sigma_CO>1.0e-100) & (Sigma_C1>1.0e-100) # if not we get error in interpolation function and we get NaNs
-    # if Sigma_CO[mask].shape[0]>0:
-        # tau[mask]=10**(log10tau_interp(np.log10(Sigma_C1[mask]),np.log10(Sigma_CO[mask]), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
-
+  
     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
     return tau # yr
 
-# def tau_CO_photon_counting(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
 
-#     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
-#     # to avoid nans we use a floor value for sigmas of 1e-50
-#     Sigma_COp=Sigma_CO*1. 
-#     Sigma_C1p=Sigma_C1*1.*(1.-fion)
-#     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
-#     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
-
-#     # mask=(Sigma_CO>1.0e-100) & (Sigma_C1>1.0e-100) # if not we get error in interpolation function and we get NaNs
-#     # if Sigma_CO[mask].shape[0]>0:
-#         # tau[mask]=10**(log10tau_interp(np.log10(Sigma_C1[mask]),np.log10(Sigma_CO[mask]), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
-
-#     tau=10**(log10tau_interp(np.log10(Sigma_C1p),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
-#     return tau # yr
-
-# def tau_CO_carbon_layer(Sigma_CO, Sigma_C1, log10tau_interp, fion=0.): # interpolate calculations based on photon counting
-
-#     tau=np.ones(Sigma_CO.shape[0])*130. # unshielded
-#     # to avoid nans we use a floor value for sigmas of 1e-50
-#     Sigma_COp=Sigma_CO*1. 
-#     Sigma_C1p=Sigma_C1*1.*(1.-fion)
-#     Sigma_COp[Sigma_COp<1.0e-50]=1.0e-50
-#     Sigma_C1p[Sigma_C1p<1.0e-50]=1.0e-50
-
-#     N_carbon=Sigma_C1p * Mearth/m_c1/ au_cm**2.0 / 2.  # the column density above CO is half of the total.
-#     carbon_shielding=np.exp(sigma_c1*N_carbon)
-#     tau_selfshielding=10**(log10tau_interp(np.log10(1.0e-50),np.log10(Sigma_COp), grid=False)) # yr, it must be called with C1 first because of column and raws definition. Tested with jupyter notebook and also here https://github.com/scipy/scipy/issues/3164
-#     tau=tau_selfshielding*carbon_shielding
-
-    
-#     return tau # yr
 
 
 ############## COLLISIONS
@@ -879,3 +844,23 @@ def Mtotdot_t(Mtot0, t, r, dr, rho=2700.0,  Dc=10.0, e=0.05, I=0.05, Qd=150.0, M
 
 
 
+### MISCELLANEOUS
+
+def sci_notation(number, sig_fig=2): # stolen from https://stackoverflow.com/questions/53553377/python-scientific-notation-with-superscript-exponent
+    ret_string = "{0:.{1:d}e}".format(number, sig_fig)
+    a,b = ret_string.split("e")
+    b = int(b)         # removed leading "+" and strips leading zeros too.
+    
+    # check exponent
+    if b==0: 
+        c=''
+    else: c="x$10^{%i}$"%b
+    
+    # check digit
+    if a=='1':
+        if c=='':
+            return '1'
+        else:
+            return c[1:]
+    else: 
+        return a + c

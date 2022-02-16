@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rc
+import matplotlib
 from scipy import interpolate
 import sys,os
 from exogas.constants import *
@@ -20,8 +22,8 @@ class simulation:
 
         # system
         default_Mstar=2.0 # Msun
-        default_Nz=20
-        default_zmax_to_H=4. # Zmax/H
+        default_Nz=25
+        default_zmax_to_H=5. # Zmax/H
         
         ## belt parameters
         default_rbelt=100.0 # au 
@@ -44,7 +46,7 @@ class simulation:
         default_Ntout=11
         default_ts_out=np.linspace(0., default_tf, default_Ntout)
 
-        default_Ntheta=1
+        default_Ntheta=10
         # default_pcapture=1.
         # default_preform=1.
         
@@ -126,7 +128,6 @@ class simulation:
         if (self.photodissociation or self.ionization):
             if self.diffusion:
                 self.dt=min(0.1*self.tvisv, self.dt0) # yr
-                print('hey')
             else:
                 self.dt=self.dt0
         elif self.diffusion:
@@ -436,7 +437,115 @@ class simulation:
 
         return rho_next
         
+    def plot_panels(self, ts_plot=None, cmap='magma'):
+
+        # font size and style
+        font= {'family':'Times New Roman', 'size': 10}
+        rc('font', **font)
+
+        cmap=plt.get_cmap('magma')
+        vmin=0.1
+        vmax=0.8
+        Ntplot=len(ts_plot)
+        major_ticks_x=np.arange(0., 10.0, 2.0)
+        minor_ticks_x=np.arange(0., 10.0, 0.5)
+
+        if ts_plot is None:
+            ts_plot=np.logspace(3, int(np.log10(self.tf)), int(np.log10(self.tf))-3+1)
+
+        fig=plt.figure(figsize=(8,5.))
+        ax1=fig.add_subplot(231)
+        ax2=fig.add_subplot(232)
+        ax3=fig.add_subplot(233)
+        ax4=fig.add_subplot(234)
+
+        gs = fig.add_gridspec(2,3)
+        ax5=fig.add_subplot(gs[1, 1:])
+
+
+        for it, ti in enumerate(ts_plot):
+
+            ## find right epoch
+            for j in range(self.Nt2):
+                if self.ts[j]>=ti:
+                    break
+            # plot the right epoch
+            x=vmin+(vmax-vmin)*it/(Ntplot-1.)
+            colori=cmap(x)
+            time_str=rsim.sci_notation(ts_plot[it]/1.0e6, sig_fig=0)+' Myr'
+
+            ax1.plot(self.zs/self.H, self.rhos[0,:,j], color=colori, label=time_str)
+            ax2.plot(self.zs/self.H, self.rhos[1,:,j], color=colori)
+            ax3.plot(self.zs/self.H, self.rhos[2,:,j], color=colori)
+
     
+        ax1.plot(self.zs/self.H,self.rho_eq_unshielded, ls='--', color='grey')
+
+        NCOs=np.cumsum(self.rhos[0,::-1,-1])[::-1]*self.dz*Mearth/au_cm**2/(28.*mp)
+        NCIs=np.cumsum(self.rhos[1,::-1,-1])[::-1]*self.dz*Mearth/au_cm**2/(12.*mp)
+        NCIIs=np.cumsum(self.rhos[2,::-1,-1])[::-1]*self.dz*Mearth/au_cm**2/(12.*mp)
+
+        ax4.plot(self.zs[:]/self.H,NCOs, color='C0', label='CO')
+        ax4.plot(self.zs[:]/self.H,NCIs, color='C1', label='CI')
+        ax4.plot(self.zs[:]/self.H,NCIIs, color='C3', label='CII')
+
+        ax4.axhline(NCO_midplane/2., color='C0', ls='--')
+        ax4.axhline(NCI_midplane/2., color='C1', ls='--')
+
+        Sigmas=2*np.sum(self.rhos[:,1:,:]*self.dz, axis=1)+self.rhos[:,0,:]*self.dz # N emisphere + midplane 
+
+        ax5.plot(self.ts/1.0e6, Sigmas[0,:], color='C0', label='CO' )
+        ax5.plot(self.ts/1.0e6, Sigmas[1,:], color='C1', label='CI')
+        ax5.plot(self.ts/1.0e6, Sigmas[2,:], color='C3', label='CII')
+
+
+        axs=[ax1,ax2,ax3, ax4]
+        for i, axi in enumerate(axs):
+            axi.set_xticks(major_ticks_x)                                                       
+            axi.set_xticks(minor_ticks_x, minor=True)
+            axi.set_xlim(0, self.zmax/self.H)
+            if axi!=ax4: axi.set_ylim(0.,)
+            axi.set_xlabel(r'$z/H$')
+
+        ax1.set_ylabel(r'Gas density [$M_{\oplus}$ au$^{-3}$]')
+        ax4.set_ylabel(r'Column density above z [cm$^{-2}$]')
+        ax5.set_ylabel(r'Suface density [$M_{\oplus}$ au$^{-2}$]')
+        ax5.set_xlabel('Time [Myr]')
+        ax5.set_xlim(self.ts[0]/1.0e6, self.ts[-1]/1.0e6)
+
+        for axi in axs[:-1]:
+            axi.ticklabel_format(scilimits=(0,0))
+        ax4.set_yscale('log')    
+        ax5.set_xscale('log')    
+        ax5.set_yscale('log')    
+    
+        locmaj = matplotlib.ticker.LogLocator(base=10,numticks=8) 
+        locmin = matplotlib.ticker.LogLocator(base=10.0,subs=np.arange(2, 10) * .1,numticks=100) # subs=(0.2,0.4,0.6,0.8)
+        ax4.yaxis.set_major_locator(locmaj)
+        ax4.yaxis.set_minor_locator(locmin)
+        locmaj = matplotlib.ticker.LogLocator(base=10,numticks=8) 
+        locmin = matplotlib.ticker.LogLocator(base=10.0,subs=np.arange(2, 10) * .1,numticks=100) # subs=(0.2,0.4,0.6,0.8)
+        ax5.yaxis.set_major_locator(locmaj)
+        ax5.yaxis.set_minor_locator(locmin)
+
+
+        ax1.set_title('CO')
+        ax2.set_title('CI')
+        ax3.set_title('CII')
+        # ax4.set_title('Column densities')
+
+        ax1.legend(loc=1, frameon=False, ncol=1, fontsize=8)
+        ax4.legend(loc=3, frameon=False, ncol=1, fontsize=8)
+        ax5.legend(loc=2, frameon=False, ncol=1, fontsize=8)
+        ax5.yaxis.set_label_position("right")
+        ax5.yaxis.tick_right()
+        ax5.tick_params(which='both', left=True)
+
+        plt.tight_layout()
+
+        return fig
+
+        
 
 def f_alpha_R(T):
     # CII, ionized carbon, z=6 and N=5 (remaining electrons)
@@ -450,3 +559,5 @@ def f_alpha_R(T):
     Bp=B+C*np.exp( -T2/T)
     # return A*( np.sqrt(T/T0) * (1.+(T/T0)**(0.5*(1.-Bp))) * (1.+(T/T1)**(0.5*(1.+Bp))) )**(-1.) # units of cm3 s-1
     return A*( np.sqrt(T/T0) * (1.+(T/T0)**0.5)**(1.-Bp) * (1.+(T/T1)**0.5)**(1.+Bp))**(-1.) # units of cm3 s-1
+
+
