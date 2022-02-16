@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rc
 from scipy import interpolate
 import sys, os
 from exogas.constants import *
@@ -568,7 +569,13 @@ class simulation:
 
         return self.Omegas * self.grid.rs * fir / (self.sig_belt *np.sqrt(np.pi*2.)) * np.exp(-0.5 * (self.grid.rs-self.rbelt)**2./ (self.sig_belt**2.)) # 1/yr
 
-    def plot_panels(self, ts_plot=None, cmap='viridis', rmax_mtot=None):
+    def plot_panels(self, ts_plot=None, cmap='magma', rmax_mtot=None):
+
+        vmin=0.1
+        vmax=0.8
+        # font size and style
+        font= {'family':'Times New Roman', 'size': 10}
+        rc('font', **font)
 
         if ts_plot is None:
             ts_plot=np.logspace(3, int(np.log10(self.tf)), int(np.log10(self.tf))-3+1)
@@ -578,7 +585,7 @@ class simulation:
         sigma_COc=2*(1./sigma_co)*m_co/Mearth*au_cm**2.0 # mearth/au2
 
 
-        fig=plt.figure(figsize=(18,6))
+        fig=plt.figure(figsize=(12,3))
 
         ax1=fig.add_subplot(131)
         ax2=fig.add_subplot(132)
@@ -598,8 +605,8 @@ class simulation:
                     it=k
                     break
 
-            cmap=plt.get_cmap('viridis')
-            x=i*1./(len(ts_plot)-1)
+            cmap=plt.get_cmap(cmap)
+            x=vmin+(vmax-vmin)*i*1./(len(ts_plot)-1)
             colori=cmap(x)
             
             ax1.plot(self.grid.rs, self.Sigma_g[0,:,it], color=colori, label='%1.1e'%(ts_plot[i]/1.0e6)+' Myr')
@@ -620,14 +627,8 @@ class simulation:
             axi.set_yscale('log')
             axi.set_xlabel('Radius [au]')
         ax1.legend(frameon=True, loc=3)
-        ax1.set_ylabel(r'Surface density [$M_{\oplus}$ au$^{-2}$]')
-
-        ## some labels
-        ytext1=ymax * 10** ( -0.13 *(np.log10(ymax)-np.log10(ymin))  )
-        ytext2=ymax * 10** ( -0.07 *(np.log10(ymax)-np.log10(ymin))  )
-        ax1.text(2.0, ytext1, r'$\alpha=10^{%1.0f}$'%np.log10(self.alpha)+'\n $\dot{M}_\mathrm{CO}=%1.2f$'%(self.MdotCO[-1]*1.0e6)+r' $M_{\oplus}$/Myr')
-        ax1.text(1.0e3, ytext2, 'CO',fontsize=15)
-        ax2.text(1.0e3, ytext2, 'CI',fontsize=15)
+        ax1.set_ylabel(r'CO Surface density [$M_{\oplus}$ au$^{-2}$]')
+        ax2.set_ylabel(r'CI Surface density [$M_{\oplus}$ au$^{-2}$]')
 
         #### plotting masses
 
