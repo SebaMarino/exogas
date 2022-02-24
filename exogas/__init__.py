@@ -1,3 +1,5 @@
 from exogas.constants import *
-import exogas.radial_simulation as radial_simulation
-import exogas.vertical_simulation as vertical_simulation
+from exogas.functions_misc import *
+from exogas.radial_simulation import radial_simulation
+from exogas.radial_simulation import radial_grid
+from exogas.vertical_simulation import vertical_simulation

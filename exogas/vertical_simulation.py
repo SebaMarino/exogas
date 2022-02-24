@@ -4,11 +4,13 @@ from matplotlib import rc
 import matplotlib
 from scipy import interpolate
 import sys,os
-from exogas.constants import *
-import exogas.radial_simulation as rsim
 from tqdm import tqdm
 
-class simulation:
+from exogas.constants import *
+from exogas.functions_misc import *
+
+
+class vertical_simulation:
 
     def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, ionization=True, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
 
@@ -52,7 +54,7 @@ class simulation:
         
         ### system
         self.Mstar=Mstar if Mstar is not None else default_Mstar
-        self.Lstar=Lstar if Lstar is not None else rsim.M_to_L(self.Mstar)
+        self.Lstar=Lstar if Lstar is not None else M_to_L(self.Mstar)
         self.Nz=Nz if Nz is not None and Nz>0 else default_Nz
         self.zmax_to_H=zmax_to_H if zmax_to_H is not None and zmax_to_H>0 else default_zmax_to_H
         
@@ -472,7 +474,7 @@ class simulation:
             # plot the right epoch
             x=vmin+(vmax-vmin)*it/(Ntplot-1.)
             colori=cmap(x)
-            time_str=rsim.sci_notation(ts_plot[it]/1.0e6, sig_fig=0)+' Myr'
+            time_str=sci_notation(ts_plot[it]/1.0e6, sig_fig=0)+' Myr'
 
             ax1.plot(self.zs/self.H, self.rhos[0,:,j], color=colori, label=time_str)
             ax2.plot(self.zs/self.H, self.rhos[1,:,j], color=colori)
