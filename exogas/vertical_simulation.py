@@ -549,17 +549,4 @@ class vertical_simulation:
 
         
 
-def f_alpha_R(T):
-    # CII, ionized carbon, z=6 and N=5 (remaining electrons)
-    # from Badnell+2006 2006ApJS..167..334B
-    A=2.5e-9
-    B=0.7849
-    C=0.1597
-    T0=6.67e-3
-    T1=1.943e6
-    T2=4.955e4
-    Bp=B+C*np.exp( -T2/T)
-    # return A*( np.sqrt(T/T0) * (1.+(T/T0)**(0.5*(1.-Bp))) * (1.+(T/T1)**(0.5*(1.+Bp))) )**(-1.) # units of cm3 s-1
-    return A*( np.sqrt(T/T0) * (1.+(T/T0)**0.5)**(1.-Bp) * (1.+(T/T1)**0.5)**(1.+Bp))**(-1.) # units of cm3 s-1
-
 
