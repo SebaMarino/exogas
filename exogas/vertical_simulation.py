@@ -487,12 +487,13 @@ class vertical_simulation:
         NCIs=np.cumsum(self.rhos[1,::-1,-1])[::-1]*self.dz*Mearth/au_cm**2/(12.*mp)
         NCIIs=np.cumsum(self.rhos[2,::-1,-1])[::-1]*self.dz*Mearth/au_cm**2/(12.*mp)
 
+        ax4.axhline(NCO_midplane/2., color='C0', ls=':')
+        ax4.axhline(NCI_midplane/2., color='C1', ls=':')
+
         ax4.plot(self.zs[:]/self.H,NCOs, color='C0', label='CO')
         ax4.plot(self.zs[:]/self.H,NCIs, color='C1', label='CI')
         ax4.plot(self.zs[:]/self.H,NCIIs, color='C3', label='CII')
 
-        ax4.axhline(NCO_midplane/2., color='C0', ls='--')
-        ax4.axhline(NCI_midplane/2., color='C1', ls='--')
 
         Sigmas=2*np.sum(self.rhos[:,1:,:]*self.dz, axis=1)+self.rhos[:,0,:]*self.dz # N emisphere + midplane 
 
