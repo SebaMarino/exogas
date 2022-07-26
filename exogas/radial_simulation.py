@@ -240,14 +240,22 @@ class radial_simulation:
         
         #### belt
         self.rbelt=rbelt if rbelt is not None else default_rbelt
-        self.width=width if width is not None else self.rbelt*0.5
-        self.sig_belt=self.width/(2.0*np.sqrt(2.*np.log(2.)))
+        self.width=width if width is not None else self.rbelt*0.5 # width can be a scalar or array with inner and outer widths
+        self.sig_belt=self.width/(2.0*np.sqrt(2.*np.log(2.))) # sig_belt can be a scalar or array with inner and outer sigmas
         self.fir=fir if fir is not None else default_fir
 
-        if self.resolution>self.width/self.rbelt/5.:
-            print('Changing resolution to resolve belt width with 5 bins')
-            self.resolution=self.width/self.rbelt/5.
+        if   isinstance(self.width, float): # symmetric radial prile
+            self.widthc=self.width
+            if self.resolution>self.width/self.rbelt/5.:
+                print('Changing resolution to resolve belt width with 5 bins')
+                self.resolution=self.width/self.rbelt/5.
+        else:
+            self.widthc=np.mean(self.width)
 
+            if self.resolution>np.mean(self.width)/self.rbelt/5.:
+                print('Changing resolution to resolve belt width with 5 bins')
+                self.resolution=self.width/self.rbelt/5.
+            
         try: 
             if tcoll>0.:
                 self.tcoll=tcoll
@@ -342,12 +350,12 @@ class radial_simulation:
         if MdotCO==None: # calculate Mdot CO based on fir
             if self.tcoll<0.:
                 print('fixed CO input rate based on constant fractional luminosity')
-                MdotCO_fixed= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
+                MdotCO_fixed= self.fco* 1.2e-3 * self.rbelt**1.5 / self.widthc  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
                 self.MdotCO=MdotCO_fixed*np.ones(self.Nt)
                 self.fir=self.fir*np.ones(self.Nt)
             else:
                 print('varying CO input rate based on final fractional luminosity and tcoll given by the user')
-                MdotCO_final= self.fco* 1.2e-3 * self.rbelt**1.5 / self.width  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
+                MdotCO_final= self.fco* 1.2e-3 * self.rbelt**1.5 / self.widthc  * self.fir**2. * self.Lstar * self.Mstar**(-0.5) # Mearth/ yr
                 self.MdotCO=MdotCO_final*(1.+self.tf/self.tcoll)**2./(1.+self.ts_sim/self.tcoll)**2.
                 self.fir=self.fir*(1.+self.tf/self.tcoll)/(1.+self.ts_sim/self.tcoll)
 
@@ -524,12 +532,21 @@ class radial_simulation:
         return Sdot_diff
 
     def Sig_dot_p_Gauss(self, MdotCO):
-        
-        mask_belt=((self.grid.rs<self.rbelt+self.width) & (self.grid.rs>self.rbelt-self.width))
         Sdot_comets=np.zeros(self.grid.Nr)
-        Sdot_comets[mask_belt]=np.exp( -0.5* 2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
-        #Sdot_comets[mask_belt]=np.exp( - (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (2.*self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2 
 
+        # make Sdot proportional to Sigma_dust**2
+        
+        if   isinstance(self.width, float): # symmetric radial prile
+            
+            mask_belt=((self.grid.rs<self.rbelt+self.width) & (self.grid.rs>self.rbelt-self.width))
+            Sdot_comets[mask_belt]=np.exp( -0.5* 2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (self.sig_belt**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        elif len(self.width)==2:
+            mask_belt=((self.grid.rs<self.rbelt+self.width[1]) & (self.grid.rs>self.rbelt-self.width[0]))
+            mask_out=mask_belt & (self.grid.rs>self.rbelt)
+            Sdot_comets[mask_belt]=np.exp( -0.5* 2* (self.grid.rs[mask_belt]-self.rbelt)**2.0 / (self.sig_belt[0]**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+            Sdot_comets[mask_out]=np.exp( -0.5* 2* (self.grid.rs[mask_out]-self.rbelt)**2.0 / (self.sig_belt[1]**2.) ) # factor 2 inside exponential is to make Mdot prop to Sigma**2
+        # make it also inversely proportional to the orbital period 
+        Sdot_comets[mask_belt]=Sdot_comets[mask_belt]*self.grid.rs[mask_belt]**(-3./2.)
         Sdot_comets[mask_belt]=MdotCO*Sdot_comets[mask_belt]/(2.*np.pi*np.sum(Sdot_comets[mask_belt]*self.grid.rs[mask_belt]*self.grid.hs[mask_belt]))
 
         return Sdot_comets
