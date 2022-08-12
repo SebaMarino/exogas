@@ -129,7 +129,7 @@ class vertical_simulation:
         #### temporal grid
         if (self.photodissociation or self.ionization):
             if self.diffusion:
-                self.dt=min(0.1*self.tvisv, self.dt0) # yr
+                self.dt=min(0.3*self.dz**2/self.nuv_au2_yr, self.dt0) # yr, this definition fixes previous instabilities when it did not depend on dz
             else:
                 self.dt=self.dt0
         elif self.diffusion:
