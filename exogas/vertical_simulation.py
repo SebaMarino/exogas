@@ -123,7 +123,7 @@ class vertical_simulation:
         self.zmax=self.zmax_to_H*self.H # au
         self.zs=np.linspace(0., self.zmax, self.Nz)
         self.dz=(self.zs[1]-self.zs[0])
-        self.Ntheta=int(Ntheta) if Ntheta is not None and Ntheta>1 else default_Ntheta
+        self.Ntheta=int(Ntheta) if Ntheta is not None and Ntheta>0 else default_Ntheta
         self.thetas=np.linspace(0., np.pi/2.-1.0e-3, self.Ntheta)
         
         #### temporal grid
@@ -233,6 +233,7 @@ class vertical_simulation:
         self.verbose=verbose                           
         if self.verbose:
             print('Zmax = %1.1f au'%(self.zmax))
+            print('Ntheta = %1.0f'%(self.Ntheta))
             print('Nz = %i'%(self.Nz))
             print('Nt simulation=%i'%self.Nt)
             print('simulation timestep = %1.1f yr'%self.dt)
