@@ -463,8 +463,8 @@ class radial_simulation:
             #     tphCO=tau_CO_photon_counting(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
             # else:
             #     tphCO=tau_CO_carbon_layer(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
-            tphCO=tau_CO_matrix(Sigma_prev[0,:], Sigma_prev[1,:], self.log10tau_interp, fion=self.fion)
-            Sdot_ph=Sigma_prev[0,:]/tphCO
+            tphCO=tau_CO_matrix(Snext[0,:], Snext[1,:], self.log10tau_interp, fion=self.fion)
+            Sdot_ph=Snext[0,:]/tphCO
             Snext[0,:]=Snext[0,:]-self.dt*Sdot_ph
             Snext[1,:]=Snext[1,:]+self.dt*Sdot_ph*muc1co
             #Snext2[0,Snext2[0,:]<0.0]=0.0
