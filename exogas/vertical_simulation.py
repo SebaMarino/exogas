@@ -12,7 +12,7 @@ from exogas.functions_misc import *
 
 class vertical_simulation:
 
-    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, ionization=True, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
+    def __init__(self, Mstar=None, Lstar=None, Nz=None, zmax_to_H=None, T=None, rbelt=None, width=None, MdotCO=None,  alphar=None, alphav=None, mu0=None,ts_out=None, dt0=None, verbose=True, viscous=True, diffusion=True, photodissociation=True, ionization=True, cr_ion=False, Ntheta=None, fir=None, fco=None, tcoll=None): #Ntout=None
 
 
         # fco=None, fir=None, fion=None, mu0=None, Sigma_floor=None, rc=None,  tf=None, dt0=None, verbose=True, dt_skip=10, diffusion=True, photodissociation=True, carbon_capture=False, pcapture=None, MdotCO=None, tcoll=None, co_reformation=False,  preform=None, mixed=True):
@@ -99,7 +99,7 @@ class vertical_simulation:
         self.diffusion=diffusion
         self.photodissociation=photodissociation
         self.ionization=ionization
-
+        self.cr_ion=cr_ion
         
         #### temperature and viscosity at the belt center
         if T==None or T<=0.0:
@@ -332,7 +332,7 @@ class vertical_simulation:
 
             return kco*kcI 
 
-    def R_ion(self, rho_temp):
+    def R_ion(self):
         t_ion=1.0040e2 # yr # calculated a priori (consistent with Rollins+2012)
 
         if self.Ntheta>1.:
@@ -345,12 +345,44 @@ class vertical_simulation:
             
         return (R_top+R_bottom)/(2*t_ion)
 
+    
     def R_recomb(self, rho_temp):
         # alpha in units of # units of cm3 s-1
         # alpha*ne. ne=ncII.
         
         return f_alpha_R(self.Tb) * (rho_temp[2,:]*Mearth/au_cm**3./(12.*mp))*year_s  # year-1, alpha * ncII
 
+
+    def R_ion_CR_C(self):
+
+        # estimate effect cosmic ray ionization could have via the Prasad-Tarafdar mechanism. For that we assume nh2/(nco+ncI+ncII)=1e4
+
+        # n_h2=( rho_temp[0,:]/28 + rho_temp[1,:]/12. + rho_temp[2,:]/12 ) * (Mearth) / mp # mol/au3
+
+        zeta_H2 = 1.0e-16 # s-1 per molelule of H2, Heays, A.~N. et al+2017 https://home.strw.leidenuniv.nl/~ewine/photo/display_h2_ca2bf3f6b7e18a508253e9521510a4b5.html
+        A_C_CR = 1.94 # from Prasad & Huntress (1980, ApJS, 43, 1) table 2
+        # A_C_CRP=2.6e2 # Heays, A.~N. et al+2017  KIDA database https://kida.astrochem-tools.org/reaction/2614/C_+_CRP.html?filter=Both
+        
+        R_cr = A_C_CR * zeta_H2 * year_s # yr-1
+
+        return R_cr
+
+
+    def R_ion_CR_O(self):
+
+        # estimate effect cosmic ray ionization could have via the Prasad-Tarafdar mechanism. For that we assume nh2/(nco+ncI+ncII)=1e4
+
+        # n_h2=( rho_temp[0,:]/28 + rho_temp[1,:]/12. + rho_temp[2,:]/12 ) * (Mearth) / mp # mol/au3
+
+        zeta_H2 = 1.0e-16 # s-1 per molelule of H2, https://home.strw.leidenuniv.nl/~ewine/photo/display_h2_ca2bf3f6b7e18a508253e9521510a4b5.html
+        A_O_CR = 2.8 # KIDA database (A or alpha parameter for C + CRP = C+ + e)
+        A_O_CRP= 2.7 # https://kida.astrochem-tools.org/search.html?species=O&reactprod=reactants&astroplaneto=Both&ionneutral=ion&isomers=1&ids=
+        
+        R_cr = (A_O_CR+A_O_CRP) * zeta_H2 * year_s # yr-1
+
+        return R_cr
+
+    
     def update_column_densities(self, rho_temp):
 
         NCO_tot=2*np.trapz(rho_temp[0,:], self.zs)*Mearth/au_cm**2./(28.*mp)
@@ -433,11 +465,19 @@ class vertical_simulation:
         ############## photodissociation
         ###########################################
         if self.ionization:
-            r_ionization=rho_temp[1,:]*self.R_ion(rho_temp)
+            r_ionization=rho_temp[1,:]*self.R_ion()
             r_recomb=rho_temp[2,:]*self.R_recomb(rho_temp)
             rho_next[1,:]=rho_next[1,:]+self.dt*(r_recomb-r_ionization)
             rho_next[2,:]=rho_next[2,:]-self.dt*(r_recomb-r_ionization)
 
+        if self.cr_ion:
+
+            r_ion_cr = rho_temp[1,:]*self.R_ion_CR_C() 
+
+            rho_next[1,:]=rho_next[1,:]+self.dt*(-r_ion_cr)
+            rho_next[2,:]=rho_next[2,:]-self.dt*(-r_ion_cr)
+            
+            
         return rho_next
         
     def plot_panels(self, ts_plot=None, cmap='magma'):
